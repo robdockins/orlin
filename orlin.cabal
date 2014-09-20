@@ -1,0 +1,28 @@
+Name:             orlin
+Cabal-Version:    >= 1.10
+Build-Type:       Simple
+Version:          0.0.1
+Maintainer:       robdockins@fastmail.fm
+Author:           Robert Dockins
+
+Library
+  Default-language: Haskell2010
+  Hs-Source-Dirs: src
+  Exposed-Modules:
+    Orlin.CmdLine    
+    Orlin.Tokens
+    Orlin.Lexer
+    Orlin.AST
+    Orlin.Parser
+
+  Build-depends:
+    base >= 4 && < 5,
+    array
+
+Executable orlinc
+  Default-language: Haskell2010
+  Main-Is: Main.hs
+  Hs-Source-Dirs: src
+  Build-depends:
+    base >= 4 && < 5,
+    orlin

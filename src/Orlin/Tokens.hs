@@ -1,0 +1,86 @@
+{- Copyright (c) 2014. Robert Dockins. -}
+
+-- | This module defines the set of tokens produced by the lexer
+--   and consumed by the parser.
+module Orlin.Tokens where
+
+-- | A 'Pn' indicates a position in a source file.
+--   It contains the name of the source file, the line number and column number.
+data Pn = Pn FilePath !Int !Int
+  deriving (Eq, Ord, Show)
+
+-- | Display a position in the format 'filename:line:col:'
+--   for printing error messages.
+displayPn :: Pn -> String
+displayPn (Pn f l c) = f ++ ":" ++ show l ++ ":" ++ show c ++ ": "
+
+-- | @Located a@ represents an element of type @a@ paired with a location.
+data Located a = L Pn a
+  deriving (Show)
+
+-- | Retrieve the element from a 'Located' package.
+unloc (L _ x) = x
+
+-- | The main token datatype.
+data Token
+  = LPAREN
+  | RPAREN
+  | LBRACK
+  | RBRACK
+  | DOT
+  | COMMA
+  | SEMI
+  | TIdent String
+  | TUIdent String
+  | NumberLit String
+  | StringLit String
+  | DCOLON
+  | COLON
+  | LBRACE
+  | RBRACE
+  | BIG_ARROW
+  | SM_ARROW
+  | PLUS
+  | MINUS
+  | EQUAL
+  | LE
+  | GE
+  | LT
+  | GT
+  | NE
+  | STAR
+  | SLASH
+  | UNDERSCORE
+  | EOF
+
+  -- Keywords
+  | MODULE
+  | WHERE
+  | QUANTITY
+  | UNIT
+
+ deriving (Eq,Show,Ord)
+
+
+-- | Given a string, this function determines if the string
+--   represents a keyword.  If so, it returns the corresponding
+--   token.  Otherwise, it return an identifier token containing
+--   the given string.
+--
+keyword_or_ident :: String -> Token
+keyword_or_ident "module"    = MODULE
+keyword_or_ident "where"     = WHERE
+keyword_or_ident "quantity"  = QUANTITY
+keyword_or_ident "unit"      = UNIT
+keyword_or_ident s           = TIdent s
+
+
+-- | Extract a string from a token.  Fails if the token is not
+--   one of 'TIdent', 'Var', 'NumberLit' or 'StringLit'.
+--
+token_str :: Located Token -> String
+token_str (L _ (TIdent x)) = x
+token_str (L _ (TUIdent x)) = x
+token_str (L _ (NumberLit x)) = x
+token_str (L _ (StringLit x)) = x
+token_str (L _ t) = error $ show t ++ " does not contain a string"
