@@ -1,0 +1,90 @@
+module Asdf where {
+  quantity Length;
+  quantity Time;
+  quantity Mass;
+  quantity Electric_current;
+  quantity Temperature;
+  quantity Luminous_intensity;
+  quantity Amount_of_substance;
+  quantity Angle;
+
+  -- SI base units
+  unit Length meter alias m;
+  unit Mass kilogram alias kg;
+  unit Time second alias s;
+  unit Electric_current ampere alias A;
+  unit Temperature kelvin alias K;
+  unit Luminous_intensity candela alias cd;
+  unit Amount_of_substance mole alias mol;
+
+  -- angles
+  unit Angle degree;
+  unit Angle revolution;
+  unit Angle gradian;
+
+  conversion 360 〈degree/revolution〉;
+  conversion 400 〈gradian/revolution〉;
+  conversion 2·π 〈1/revolution〉;
+
+  -- other units
+  unit Time minute alias min;
+  unit Time hour alias hr;
+
+  conversion 60 〈s/min〉;
+  conversion 60 〈min/hr〉;
+
+  unit Length centimeter alias cm;
+  unit Length milimeter alias mm;
+
+  unit Length foot alias ft;
+  unit Length inch alias in;
+  unit Length mile;
+
+  conversion 5280 〈ft/mile〉;
+  conversion 12 〈in/ft〉;
+  conversion 2.54 〈cm/inf〉;
+  conversion 100 〈cm/m〉;
+  conversion 1000 〈mm/m〉;
+
+  unit hertz alias Hz ≙ 1/s;
+  unit columb alias C ≙ A·s;
+  unit volt alias V ≙ W/A;
+  unit joule alias J ≙ N·m;
+  unit newton alias N ≙ kg·m/s²;
+  unit watt alias W ≙ J/s;
+  unit henry alias H ≙ Ω·s;
+  unit ohm alias Ω ≙ V/A;
+  unit farad alias F ≙ A·s/V;
+
+  constant speed_of_light alias c
+      ≙ 299_792_458 〈m/s〉;
+  constant magnetic alias μₒ
+      ≙ π · 4E-7 〈H·s〉;
+  constant electric alias ε₀
+      ≙ 1/(μ₀ · c²);
+  constant plank alias h
+      ≙ 6.626_069_5729_E-34 〈J·s〉;
+  constant dirac alias ℏ
+      ≙ h / (2·π);
+  constant avagadro alias NA
+      ≙ 6.022_141_E+23 〈1/mol〉;
+  constant faraday alias F
+      ≙ 1.602_1766_E+4 〈C/mol〉;
+  constant elementary_charge alias e
+      ≙ F / NA;
+  constant fine_structure alias α
+      ≙ e²·c·μ₀ / 2·h;
+
+  geometric space D1
+     units ( second, meter )
+     basis ( 《t》, 《x》 )
+     signature ( c, -1 );
+
+  scale_d1t : ∀(α β:Unit) (k:Grade), Real〈α〉 → D1(k)〈β〉 → D1(k)〈α·β〉;
+  scale_d1t ≙ λx v, x·v;
+  
+  vector_mult : ∀(α β:Unit), D1{1}〈α〉 → D1{1}〈β〉 → D1{0,2}〈α·β〉
+  vector_mult ≙ λx y, x·y;
+  fact : 《t》= D1( 1, 0 );
+  fact : 《x》= D1( 0, 1 );
+}
