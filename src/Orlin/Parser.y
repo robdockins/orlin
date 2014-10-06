@@ -14,14 +14,17 @@ import Orlin.Lexer
 %error { parseError }
 
 %token IDENT { L _ (TIdent _) }
-%token UIDENT { L _ (TUIdent _) }
 %token LPAREN { L _ LPAREN }
 %token RPAREN { L _ RPAREN }
 %token LBRACK { L _ LBRACK }
 %token RBRACK { L _ RBRACK }
 %token LBRACE { L _ LBRACE }
 %token RBRACE { L _ RBRACE }
+%token LANGLE { L _ LANGLE }
+%token RANGLE { L _ RANGLE }
 
+%token SUPERSCRIPT { L _ (SUPERSCRIPT _) }
+%token DEFS { L _ DEFS }
 %token DOT { L _ DOT }
 %token COMMA { L _ COMMA }
 %token SEMI { L _ SEMI }
@@ -29,12 +32,15 @@ import Orlin.Lexer
 %token SM_ARROW { L _ SM_ARROW }
 %token PLUS { L _ PLUS }
 %token MINUS { L _ MINUS }
+%token HYPHEN { L _ HYPHEN }
 %token EQUAL { L _ EQUAL }
+%token TOPOWER { L _ TOPOWER }
 %token LE { L _ Orlin.Tokens.LE }
 %token GE { L _ Orlin.Tokens.GE }
 %token LT { L _ Orlin.Tokens.LT }
 %token GT { L _ Orlin.Tokens.GT }
 %token STAR { L _ STAR }
+%token CDOT { L _ CDOT }
 %token SLASH { L _ SLASH }
 %token NE { L _ NE }
 %token COLON { L _ COLON }
@@ -48,7 +54,10 @@ import Orlin.Lexer
 %token WHERE { L _ WHERE }
 %token QUANTITY { L _ QUANTITY }
 %token UNIT { L _ UNIT }
-
+%token ALIAS { L _ ALIAS }
+%token CONVERSION { L _ CONVERSION }
+%token CONSTANT { L _ CONSTANT }
+%token PER { L _ PER }
 
 
 %right SM_ARROW
@@ -65,8 +74,10 @@ import Orlin.Lexer
 -- %right PLUSPLUS
 
 %right PLUS
-%nonassoc MINUS
+%left MINUS
+%left HYPHEN
 %right STAR
+%right CDOT
 %nonassoc SLASH
 -- %nonassoc TILDE
 
@@ -89,23 +100,54 @@ pnlist(p)
 ident :: { Ident }
    : IDENT                               { Ident (loc $1) (token_str $1) }
 
-uident :: { UIdent }
-   : UIDENT                              { UIdent (loc $1) (token_str $1) }
-
-
-module :: { Module }
+module :: { Module PreExpr PreExpr }
 module
-   : MODULE uident WHERE
+   : MODULE ident WHERE
      LBRACE decl_group RBRACE            { Module $2 $5 }
 
-decl_group :: { [(Pn,Decl)] }
+decl_group :: { [(Pn,Decl PreExpr PreExpr)] }
    : decl SEMI decl_group                { $1 : $3 }
    |                                     { [] }
 
-decl :: { (Pn,Decl) }
+expr_atom :: { PreExpr }
+   : NUMBERLIT                           { PExprNumLit (loc $1) (token_str $1) }
+   | ident                               { PExprIdent $1 }
+   | LPAREN expr RPAREN                  { PExprParens (loc $1) $2 }
+
+expr0 :: { PreExpr }
+   : expr_atom                           { $1 }
+   | expr_atom SUPERSCRIPT               { PExprSuperscript $1 (L (loc $2) (token_str $2)) }
+   | expr_atom TOPOWER expr_atom         { PExprToPower $1 $3 }
+   | HYPHEN expr_atom                     { PExprNeg (loc $1) $2 }
+
+expr1 :: { PreExpr }
+   : expr0                               { $1 }
+   | expr1 PLUS expr1                    { PExprBinOp $1 $2 $3 }
+   | expr1 MINUS expr1                   { PExprBinOp $1 $2 $3 }
+   | expr1 HYPHEN expr1                  { PExprBinOp $1 $2 $3 }
+   | expr1 CDOT expr1                    { PExprBinOp $1 $2 $3 }
+   | expr1 STAR expr1                    { PExprBinOp $1 $2 $3 }
+   | expr1 SLASH expr1                   { PExprBinOp $1 $2 $3 }
+
+expr2 :: { PreExpr }
+   : expr1                               { $1 } 
+   | expr1 LANGLE expr1 RANGLE           { PExprUnit $1 $3 }
+
+expr :: { PreExpr }
+   : expr2                               { $1 }
+
+decl :: { (Pn,Decl PreExpr PreExpr) }
 decl
    : QUANTITY ident                      { (loc $1, QuantityDecl $2) }
-   | UNIT ident ident                    { (loc $1, UnitDecl $2 $3) }
+   | UNIT ident ident                    { (loc $1, UnitDecl $2 [$3]) }
+   | UNIT ident ident ALIAS ident        { (loc $1, UnitDecl $2 [$3,$5]) }
+   | UNIT ident DEFS expr                { (loc $1, UnitDefn [$2] $4) }
+   | UNIT ident ALIAS ident DEFS expr    { (loc $1, UnitDefn [$2,$4] $6) }
+   | CONVERSION expr PER expr            { (loc $1, ConversionDecl $2) }
+   | CONSTANT ident DEFS expr            { (loc $1, ConstantDefn [$2] $4) }
+   | CONSTANT ident ALIAS ident      
+        DEFS expr                        { (loc $1, ConstantDefn [$2,$4] $6) }
+
 
 
 {
@@ -168,6 +210,7 @@ instance Functor P where
 instance PTMonad P where
   parseFail = errorP
 
+
 -- | Check to see if we have a pushback token to use; if so, use it immediately.
 --   If not, invoke the Alex lexer to produce a new token and do the necessary
 --   bookeeping before passing it to our continuation.  Fail if we get a lexical
@@ -221,7 +264,7 @@ returnToken :: Located Token -> ParseState -> ParseState
 returnToken tok st = st{ pushback_tok = PushbackTok tok }
 
 
-runModuleParser :: FilePath -> String -> Either [(Pn,String)] Module
+runModuleParser :: FilePath -> String -> Either [(Pn,String)] (Module PreExpr PreExpr)
 runModuleParser fp str =
    let (st',x) = unP moduleParser (initParseState fp str)
     in case x of

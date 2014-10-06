@@ -18,20 +18,22 @@ module Asdf where {
   unit Amount_of_substance mole alias mol;
 
   -- angles
+  unit radian ≙ 1; – the unit "radian" is an alias for a dimensionless value
+
   unit Angle degree;
   unit Angle revolution;
   unit Angle gradian;
 
-  conversion 360 〈degree/revolution〉;
-  conversion 400 〈gradian/revolution〉;
-  conversion 2·π 〈1/revolution〉;
+  conversion 360 〈degree〉 per 1 〈revolution〉;
+  conversion 400 〈gradian〉 per 1 〈revolution〉;
+  conversion 2·π 〈radian〉 per 1 〈revolution〉;
 
   -- other units
   unit Time minute alias min;
   unit Time hour alias hr;
 
-  conversion 60 〈s/min〉;
-  conversion 60 〈min/hr〉;
+  conversion 60 〈s〉 per 1 〈min〉;
+  conversion 60 〈min〉 per 1 〈hr〉;
 
   unit Length centimeter alias cm;
   unit Length milimeter alias mm;
@@ -40,11 +42,11 @@ module Asdf where {
   unit Length inch alias in;
   unit Length mile;
 
-  conversion 5280 〈ft/mile〉;
-  conversion 12 〈in/ft〉;
-  conversion 2.54 〈cm/inf〉;
-  conversion 100 〈cm/m〉;
-  conversion 1000 〈mm/m〉;
+  conversion 5280 〈ft〉 per 1 〈mile〉;
+  conversion 12 〈in〉 per 1〈ft〉;
+  conversion 2.54 〈cm〉 per 1 〈in〉;
+  conversion 100 〈cm〉 per 1 〈m〉;
+  conversion 1000 〈mm〉 per 1 〈m〉;
 
   unit hertz alias Hz ≙ 1/s;
   unit columb alias C ≙ A·s;
@@ -58,7 +60,7 @@ module Asdf where {
 
   constant speed_of_light alias c
       ≙ 299_792_458 〈m/s〉;
-  constant magnetic alias μₒ
+  constant magnetic alias μ₀
       ≙ π · 4E-7 〈H·s〉;
   constant electric alias ε₀
       ≙ 1/(μ₀ · c²);
@@ -66,25 +68,27 @@ module Asdf where {
       ≙ 6.626_069_5729_E-34 〈J·s〉;
   constant dirac alias ℏ
       ≙ h / (2·π);
-  constant avagadro alias NA
-      ≙ 6.022_141_E+23 〈1/mol〉;
+  constant avagadro alias Nₐ
+      ≙ 6.022_141 * 10^23 〈1/mol〉;
   constant faraday alias F
       ≙ 1.602_1766_E+4 〈C/mol〉;
   constant elementary_charge alias e
-      ≙ F / NA;
+      ≙ F / Nₐ;
   constant fine_structure alias α
       ≙ e²·c·μ₀ / 2·h;
 
-  geometric space D1
-     units ( second, meter )
-     basis ( 《t》, 《x》 )
-     signature ( c, -1 );
 
-  scale_d1t : ∀(α β:Unit) (k:Grade), Real〈α〉 → D1(k)〈β〉 → D1(k)〈α·β〉;
-  scale_d1t ≙ λx v, x·v;
+–  geometric space D1
+–     units ( second, meter )
+–     basis ( 《t》, 《x》 )
+–     signature ( c, -1 );
+
+–  scale_d1t : ∀(α β:Unit) (k:Grade), Real〈α〉 → D1(k)〈β〉 → D1(k)〈α·β〉;
+–  scale_d1t ≙ \ x  v, x·v;
   
-  vector_mult : ∀(α β:Unit), D1{1}〈α〉 → D1{1}〈β〉 → D1{0,2}〈α·β〉
-  vector_mult ≙ λx y, x·y;
-  fact : 《t》= D1( 1, 0 );
-  fact : 《x》= D1( 0, 1 );
+–  vector_mult : ∀(α β:Unit), D1{1}〈α〉 → D1{1}〈β〉 → D1{0,2}〈α·β〉
+–  vector_mult ≙ 𝛌x y, x·y;
+
+–  fact : 《t》= D1( 1, 0 );
+–  fact : 《x》= D1( 0, 1 );
 }

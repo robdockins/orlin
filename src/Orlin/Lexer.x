@@ -21,20 +21,27 @@ import Orlin.Tokens
 
 %wrapper "monadUserState"
 
-$digit = 0-9
+$digit = [0-9]
 $alpha = [A-Z a-z]
 $lower = [a-z]
 $upper = [A-Z]
 $hexdigit = [$digit a-f A-F]
+$superscript = [⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺]
+$subscript   = [₀₁₂₃₄₅₆₇₈₉ₐₑᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ]
+$lgreek      = [αβγδεζηθικλμνξοπρστυφχψω]
+$ugreek      = [ΑΒΓΔΕΖΗΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ]
+$extra       = [ℏƛℓ]
 
-@sign       = ("~")?
-@positive   = [$digit]+
-@float      = @positive "." @positive
-@exponent   = ("e" | "E") @sign @positive
-@scientific = @sign @float @exponent
-@floatlit   = @sign @float
-@int        = @sign @positive
-@hex        = "0x" [$hexdigit]+
+@sign        = ("-"|"+")?
+@positive    = [$digit] [$digit _]*
+@float       = @positive "." @positive
+@exponent    = ("e" | "E") @sign @positive
+@scientific  = (@positive | @float) @exponent
+@floatlit    = @float
+@int         = @positive
+@hex         = "0x" [$hexdigit]+
+@ident       = [$alpha $lgreek $ugreek $extra]
+               [$alpha $digit \_ $subscript $lgreek $ugreek $extra ' ]*  
 
 tokens :-
 
@@ -56,30 +63,52 @@ tokens :-
 <0>  ^ "--" ("-")+ .* $              { docString }
 <0>  [$white]+                       { skipSpace }
 <0>  "--".*                          { skipSpace }
-<0>  $lower [$alpha $digit \_]*      { emits keyword_or_ident }
-<0>  $upper [$alpha $digit \_]*      { emits TUIdent }
+<0>  "–".*                          { skipSpace }
+<0>  @ident                          { emits keyword_or_ident }
 <0>  @scientific                     { emits NumberLit }
 <0>  @floatlit                       { emits NumberLit }
 <0>  @int                            { emits NumberLit }
 <0>  @hex                            { emits NumberLit }
+<0>  $superscript+                   { emits SUPERSCRIPT }
+<0>  "∀"                            { emit FORALL }
+<0>  "∃"                            { emit EXISTS }
+<0>  "→"                            { emit SM_ARROW }
+<0>  "⇒"                            { emit BIG_ARROW }
+<0>  "<|"                           { emit LANGLE }
+<0>  "|>"                           { emit RANGLE }
+<0>  "〈"                             { emit LANGLE }
+<0>  "〉"                             { emit RANGLE }
+<0>  "<<"                            { emit LDATA }
+<0>  ">>"                            { emit RDATA }
+<0>  "《"                            { emit LDATA }
+<0>  "》"                            { emit RDATA }
 <0>  "("                             { emit LPAREN }
 <0>  ")"                             { emit RPAREN }
 <0>  "["                             { emit LBRACK }
 <0>  "]"                             { emit RBRACK }
 <0>  "."                             { emit DOT }
+<0>  "·"                             { emit CDOT }
+<0>  ":="                            { emit DEFS }
+<0>  "≙"                             { emit DEFS }
 <0>  ","                             { emit COMMA }
 <0>  ";"                             { emit SEMI }
 <0>  "->"                            { emit SM_ARROW }
 <0>  "=>"                            { emit BIG_ARROW }
 <0>  "+"                             { emit PLUS }
-<0>  "-"                             { emit MINUS }  
+<0>  "−"                             { emit MINUS }
+<0>  "-"                             { emit HYPHEN }
 <0>  "="                             { emit EQUAL }
 <0>  "*"                             { emit STAR }
+<0>  "^"                             { emit TOPOWER }
 <0>  "/"                             { emit SLASH }
 <0>  "<>"                            { emit NE }
+<0>  "!="                            { emit NE }
+<0>  "≠"                             { emit NE }
 <0>  "<="                            { emit LE }
 <0>  "=<"                            { emit LE }
 <0>  ">="                            { emit GE }
+<0>  "≤"                             { emit LE }
+<0>  "≥"                             { emit GE }
 <0>  "<"                             { emit LT }
 <0>  ">"                             { emit GT }
 <0>  "_"                             { emit UNDERSCORE }
@@ -87,6 +116,13 @@ tokens :-
 <0>  "}"                             { emit RBRACE }
 <0>  "::"                            { emit DCOLON }
 <0>  ":"                             { emit COLON }
+<0>  "\"                            { emit SM_LAMBDA }
+<0>  "𝛌"                             { emit SM_LAMBDA }
+<0>  "/\"                           { emit BIG_LAMBDA }
+<0>  "𝚲"                             { emit BIG_LAMBDA }
+
+-- <0>  "∂"                             { emit PARTIAL }
+
 
 
 {

@@ -16,7 +16,7 @@ displayPn (Pn f l c) = f ++ ":" ++ show l ++ ":" ++ show c ++ ": "
 
 -- | @Located a@ represents an element of type @a@ paired with a location.
 data Located a = L Pn a
-  deriving (Show)
+  deriving (Show, Eq, Ord)
 
 -- | Retrieve the element from a 'Located' package.
 unloc (L _ x) = x
@@ -27,11 +27,19 @@ data Token
   | RPAREN
   | LBRACK
   | RBRACK
+  | LDATA
+  | RDATA
+  | LANGLE
+  | RANGLE
+  | CDOT
+  | SUPERSCRIPT String
+  | FORALL
+  | EXISTS
+  | DEFS
   | DOT
   | COMMA
   | SEMI
   | TIdent String
-  | TUIdent String
   | NumberLit String
   | StringLit String
   | DCOLON
@@ -40,9 +48,13 @@ data Token
   | RBRACE
   | BIG_ARROW
   | SM_ARROW
+  | BIG_LAMBDA
+  | SM_LAMBDA
   | PLUS
+  | HYPHEN
   | MINUS
   | EQUAL
+  | PARTIAL
   | LE
   | GE
   | LT
@@ -50,6 +62,7 @@ data Token
   | NE
   | STAR
   | SLASH
+  | TOPOWER
   | UNDERSCORE
   | EOF
 
@@ -58,6 +71,10 @@ data Token
   | WHERE
   | QUANTITY
   | UNIT
+  | ALIAS
+  | CONVERSION
+  | CONSTANT
+  | PER
 
  deriving (Eq,Show,Ord)
 
@@ -68,10 +85,18 @@ data Token
 --   the given string.
 --
 keyword_or_ident :: String -> Token
-keyword_or_ident "module"    = MODULE
-keyword_or_ident "where"     = WHERE
-keyword_or_ident "quantity"  = QUANTITY
-keyword_or_ident "unit"      = UNIT
+keyword_or_ident "module"     = MODULE
+keyword_or_ident "where"      = WHERE
+keyword_or_ident "quantity"   = QUANTITY
+keyword_or_ident "unit"       = UNIT
+keyword_or_ident "alias"      = ALIAS
+keyword_or_ident "conversion" = CONVERSION
+keyword_or_ident "constant"   = CONSTANT
+keyword_or_ident "per"        = PER
+keyword_or_ident "forall"     = FORALL
+keyword_or_ident "exists"     = EXISTS
+
+
 keyword_or_ident s           = TIdent s
 
 
@@ -80,7 +105,7 @@ keyword_or_ident s           = TIdent s
 --
 token_str :: Located Token -> String
 token_str (L _ (TIdent x)) = x
-token_str (L _ (TUIdent x)) = x
 token_str (L _ (NumberLit x)) = x
 token_str (L _ (StringLit x)) = x
+token_str (L _ (SUPERSCRIPT x)) = x
 token_str (L _ t) = error $ show t ++ " does not contain a string"
