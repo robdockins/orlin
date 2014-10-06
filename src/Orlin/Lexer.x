@@ -39,7 +39,7 @@ $extra       = [ℏƛℓ]
 @scientific  = (@positive | @float) @exponent
 @floatlit    = @float
 @int         = @positive
-@hex         = "0x" [$hexdigit]+
+@hex         = "0x" [$hexdigit] [$hexdigit _]+
 @ident       = [$alpha $lgreek $ugreek $extra]
                [$alpha $digit \_ $subscript $lgreek $ugreek $extra ' ]*  
 

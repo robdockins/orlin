@@ -60,21 +60,21 @@ module Asdf where {
 
   constant speed_of_light alias c
       ≙ 299_792_458 〈m/s〉;
-  constant magnetic alias μ₀
+  constant magnetic_constant alias μ₀
       ≙ π · 4E-7 〈H·s〉;
-  constant electric alias ε₀
+  constant electric_constant alias ε₀
       ≙ 1/(μ₀ · c²);
-  constant plank alias h
+  constant plank_constant alias h
       ≙ 6.626_069_5729_E-34 〈J·s〉;
-  constant dirac alias ℏ
+  constant dirac_constant alias ℏ
       ≙ h / (2·π);
-  constant avagadro alias Nₐ
+  constant avagadro_number alias Nₐ
       ≙ 6.022_141 * 10^23 〈1/mol〉;
-  constant faraday alias F
+  constant faraday_constant alias F
       ≙ 1.602_1766_E+4 〈C/mol〉;
   constant elementary_charge alias e
       ≙ F / Nₐ;
-  constant fine_structure alias α
+  constant fine_structure_constant alias α
       ≙ e²·c·μ₀ / 2·h;
 
 
