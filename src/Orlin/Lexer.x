@@ -65,10 +65,10 @@ tokens :-
 <0>  "--".*                          { skipSpace }
 <0>  "–".*                          { skipSpace }
 <0>  @ident                          { emits keyword_or_ident }
-<0>  @scientific                     { emits NumberLit }
-<0>  @floatlit                       { emits NumberLit }
-<0>  @int                            { emits NumberLit }
-<0>  @hex                            { emits NumberLit }
+<0>  @scientific                     { emits DecNumberLit }
+<0>  @floatlit                       { emits DecNumberLit }
+<0>  @int                            { emits DecNumberLit }
+<0>  @hex                            { emits HexNumberLit }
 <0>  $superscript+                   { emits SUPERSCRIPT }
 <0>  "∀"                            { emit FORALL }
 <0>  "∃"                            { emit EXISTS }

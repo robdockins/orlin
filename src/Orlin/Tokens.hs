@@ -40,7 +40,8 @@ data Token
   | COMMA
   | SEMI
   | TIdent String
-  | NumberLit String
+  | DecNumberLit String
+  | HexNumberLit String
   | StringLit String
   | DCOLON
   | COLON
@@ -75,6 +76,7 @@ data Token
   | CONVERSION
   | CONSTANT
   | PER
+  | SYMBOLIC
 
  deriving (Eq,Show,Ord)
 
@@ -95,7 +97,7 @@ keyword_or_ident "constant"   = CONSTANT
 keyword_or_ident "per"        = PER
 keyword_or_ident "forall"     = FORALL
 keyword_or_ident "exists"     = EXISTS
-
+keyword_or_ident "symbolic"   = SYMBOLIC
 
 keyword_or_ident s           = TIdent s
 
@@ -105,7 +107,8 @@ keyword_or_ident s           = TIdent s
 --
 token_str :: Located Token -> String
 token_str (L _ (TIdent x)) = x
-token_str (L _ (NumberLit x)) = x
+token_str (L _ (DecNumberLit x)) = x
+token_str (L _ (HexNumberLit x)) = x
 token_str (L _ (StringLit x)) = x
 token_str (L _ (SUPERSCRIPT x)) = x
 token_str (L _ t) = error $ show t ++ " does not contain a string"

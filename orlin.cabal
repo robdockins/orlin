@@ -18,12 +18,13 @@ Library
 
   Build-depends:
     base >= 4 && < 5,
-    array
+    array,
+    containers
 
 Executable orlinc
   Default-language: Haskell2010
   Main-Is: Main.hs
-  Hs-Source-Dirs: src
+  Hs-Source-Dirs: main
   Build-depends:
     base >= 4 && < 5,
     orlin

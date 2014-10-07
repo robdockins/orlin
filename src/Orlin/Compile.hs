@@ -7,13 +7,13 @@ module Orlin.Compile where
 
 import System.IO
 
+import Control.Applicative
 import qualified Data.Map as M
 import Data.Map ( Map )
 import Data.List (sortBy, intersperse)
 
-import Tokens
-import AST
-import SymbolTable
+import Orlin.Tokens
+import Orlin.AST
 
 -- | Warning and error messages.
 data WarnErr
@@ -28,13 +28,6 @@ warnErrPn (Err pn _) = pn
 warnErrComparePn :: WarnErr -> WarnErr -> Ordering
 warnErrComparePn x y = compare (warnErrPn x) (warnErrPn y)
 
-data TypeMapEntry
-  = UnboundTyVar
-  | BoundTyVar IType
-  | RigidTyVar String
- deriving (Eq, Show)
-
-type TypeMap = M.Map Integer (Pn, TypeMapEntry)
 
 -- | State record tracked by the 'Comp' monad
 data CompSt
@@ -66,6 +59,10 @@ instance Monad Comp where
 instance Functor Comp where
   fmap f m = m >>= return . f
 
+instance Applicative Comp where
+  pure = return 
+  f <*> x = f >>= \f' -> x >>= \x' -> return (f' x')
+
 -- | A failure-recovery combinator.
 onFail
    :: a      -- ^ A constant value to return if the main computation fails
@@ -90,17 +87,15 @@ compSetState st = Comp $ \_ -> (st, Just ())
 compUpdateState :: (CompSt -> CompSt) -> Comp ()
 compUpdateState f = Comp $ \st -> (f st, Just ())
 
-compSymbolTable :: Comp SymbolTable
-compSymbolTable = fmap comp_st $ compGetState
 
 -- | Look up an identifier in the symbol table.  Fail with an error
 --   message if the identifier is not in the table.
-lookupTermIdent :: Ident -> Comp (Symbol SymbolInfo)
-lookupTermIdent i = do
-   st <- compGetState
-   case st_lookup i (comp_st st) of
-      Nothing -> errMsg (loc i) $ unwords [qt i, "not in scope"]
-      Just info -> return info
+-- lookupTermIdent :: Ident -> Comp (Symbol SymbolInfo)
+-- lookupTermIdent i = do
+--    st <- compGetState
+--    case st_lookup i (comp_st st) of
+--       Nothing -> errMsg (loc i) $ unwords [qt i, "not in scope"]
+--       Just info -> return info
 
 -- | Print the given warning and error messages on stderr in order by their position.
 displayErrors :: [WarnErr] -> IO ()

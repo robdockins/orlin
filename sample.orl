@@ -26,7 +26,7 @@ module Asdf where {
 
   conversion 360 〈degree〉 per 1 〈revolution〉;
   conversion 400 〈gradian〉 per 1 〈revolution〉;
-  conversion 2·π 〈radian〉 per 1 〈revolution〉;
+  conversion 2·π per 1 〈revolution〉;
 
   -- other units
   unit Time minute alias min;
@@ -57,6 +57,9 @@ module Asdf where {
   unit henry alias H ≙ Ω·s;
   unit ohm alias Ω ≙ V/A;
   unit farad alias F ≙ A·s/V;
+
+  symbolic constant half_circle_ratio alias π
+      ≙ 16·arctan(1/5) − 4·arctan(1/239);
 
   constant speed_of_light alias c
       ≙ 299_792_458 〈m/s〉;
