@@ -33,7 +33,8 @@ warnErrComparePn x y = compare (warnErrPn x) (warnErrPn y)
 data CompSt
   = CompSt
   { comp_messages   :: [WarnErr]          -- ^ Accumulated error and warning messages
-  , comp_expect     :: [(Pn,WarnErr)]     -- ^ The /expected/ error and warning messages, as recorded in \"pragma expect\" declarations
+  , comp_expect     :: [(Pn,WarnErr)]     -- ^ The /expected/ error and warning messages, as recorded 
+                                          --   in \"pragma expect\" declarations
   , comp_regression :: Bool               -- ^ Are we in static compiler regression mode?
   , comp_debug      :: Bool               -- ^ Are we in compiler debugging mode?
   , comp_fresh      :: !Int               -- ^ Counter for fresh name generation

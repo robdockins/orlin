@@ -1,14 +1,40 @@
 module Orlin.CmdLine where
 
+import           Data.Map.Strict( Map )
+import qualified Data.Map.Strict as Map
+import           Data.Set( Set )
+import qualified Data.Set as Set
+
 import System.IO
 
 import Orlin.Tokens( Pn, displayPn )
 import Orlin.Parser
 import Orlin.Lexer
 import Orlin.AST
+import Orlin.Units
+import Orlin.Compile
 
 cmdLine :: [String] -> IO ()
-cmdLine = mapM_ parseAndPrint'
+cmdLine = mapM_ buildAndPrintUnitEnv
+--cmdLine = mapM_ parseAndPrint'
+
+printUnitEnv :: (QuantitySet, UnitTable) -> IO ()
+printUnitEnv (qty_set,utbl) =
+  do putStrLn "Quantities" 
+     mapM_ print $ Set.toList qty_set
+     putStrLn ""
+     putStrLn "Units"
+     mapM_ print $ Map.toList utbl
+
+buildAndPrintUnitEnv :: String -> IO ()
+buildAndPrintUnitEnv fp = do
+  mod <- openFile fp ReadMode >>= hGetContents >>=
+             either printErrs return . runModuleParser fp >>= premoduleToModule
+  let (st', x) = unComp (buildUnitEnv mod) initialCompSt
+  displayErrors (comp_messages st')
+  case x of
+     Nothing -> return ()
+     Just env -> printUnitEnv env
 
 instance PMonad IO where
   parseFail pn msg = fail $ unwords [displayPn pn, msg]

@@ -48,33 +48,49 @@ module Asdf where {
   conversion 100 〈cm〉 per 1 〈m〉;
   conversion 1000 〈mm〉 per 1 〈m〉;
 
-  unit hertz alias Hz ≙ 1/s;
+  unit hertz alias Hz ≙ s⁻¹;
   unit columb alias C ≙ A·s;
-  unit volt alias V ≙ W/A;
-  unit joule alias J ≙ N·m;
   unit newton alias N ≙ kg·m/s²;
+  unit joule alias J ≙ N·m;
   unit watt alias W ≙ J/s;
-  unit henry alias H ≙ Ω·s;
+  unit volt alias V ≙ J/C;
   unit ohm alias Ω ≙ V/A;
+  unit henry alias H ≙ Ω·s;
   unit farad alias F ≙ A·s/V;
 
+– ℜ〈  〉
+
   symbolic constant half_circle_ratio alias π
+      – we define π via Machin's formula, which converges much faster than 4·arctan(1)
       ≙ 16·arctan(1/5) − 4·arctan(1/239);
 
-  constant speed_of_light alias c
+  symbolic constant speed_of_light alias c
       ≙ 299_792_458 〈m/s〉;
+
+  symbolic constant plank_constant alias h
+      ≙ 6.626_069_5729_E-34 〈J·s〉;
+
+  symbolic constant avagadro_number alias Nₐ
+      ≙ 6.022_141 * 10^23 〈1/mol〉;
+
+  symbolic constant faraday_constant alias F
+      ≙ 1.602_1766_E+4 〈C/mol〉;
+
+  symbolic constant gravitational_constant alias G
+      ≙ 6.673_E-11 〈N·m²·kg⁻²〉;
+
+  symbolic constant standard_earth_gravity alias gₑ
+      ≙ 9.80665 〈m/s²〉;
+
+--  constant bogus_constant
+--      ≙ 10^(6 / (0 · 10)) 〈1/m〉;
+
   constant magnetic_constant alias μ₀
       ≙ π · 4E-7 〈H·s〉;
   constant electric_constant alias ε₀
       ≙ 1/(μ₀ · c²);
-  constant plank_constant alias h
-      ≙ 6.626_069_5729_E-34 〈J·s〉;
   constant dirac_constant alias ℏ
       ≙ h / (2·π);
-  constant avagadro_number alias Nₐ
-      ≙ 6.022_141 * 10^23 〈1/mol〉;
-  constant faraday_constant alias F
-      ≙ 1.602_1766_E+4 〈C/mol〉;
   constant elementary_charge alias e
       ≙ F / Nₐ;
   constant fine_structure_constant alias α

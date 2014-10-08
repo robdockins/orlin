@@ -26,6 +26,10 @@ instance Loc Ident where
 data Ident = Ident Pn String
  deriving (Eq, Show, Ord)
 
+getIdent :: Ident -> String
+getIdent (Ident _ x) = x
+
+
 data Module unit num expr = Module Ident [(Pn,Decl unit num expr)]
  deriving (Eq, Show, Ord)
 
