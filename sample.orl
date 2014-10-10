@@ -1,4 +1,4 @@
-module Asdf where {
+module Sample where {
   quantity Length;
   quantity Time;
   quantity Mass;
@@ -58,7 +58,15 @@ module Asdf where {
   unit henry alias H ≙ Ω·s;
   unit farad alias F ≙ A·s/V;
 
-– ℜ〈  〉
+  primitive sin : ℝ → ℝ;
+  primitive cos : ℝ → ℝ;
+  primitive tan : ℝ → ℝ;
+  primitive arcsin : ℝ → ℝ;
+  primitive arccos : ℝ → ℝ;
+  primitive arctan : ℝ → ℝ;
+
+  primitive exp : ℝ → ℝ;
+  primitive ln : ℝ → ℝ;
 
   symbolic constant half_circle_ratio alias π
       – we define π via Machin's formula, which converges much faster than 4·arctan(1)
@@ -71,7 +79,7 @@ module Asdf where {
       ≙ 6.626_069_5729_E-34 〈J·s〉;
 
   symbolic constant avagadro_number alias Nₐ
-      ≙ 6.022_141 * 10^23 〈1/mol〉;
+      ≙ 6.022_141_E+23 〈mol⁻¹〉;
 
   symbolic constant faraday_constant alias F
       ≙ 1.602_1766_E+4 〈C/mol〉;
@@ -95,6 +103,11 @@ module Asdf where {
       ≙ F / Nₐ;
   constant fine_structure_constant alias α
       ≙ e²·c·μ₀ / 2·h;
+
+
+gravitational_attraction : ℝ〈kg〉 → ℝ〈kg〉 → ℝ〈m〉 → ℝ〈N〉;
+gravitational_attraction ≙ 𝛌m₁ m₂ r, (G·m₁·m₂)/r²;
+
 
 
 –  geometric space D1

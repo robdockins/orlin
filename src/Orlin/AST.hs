@@ -4,12 +4,10 @@
 module Orlin.AST where
 
 import Control.Applicative
-import Control.Monad
 import Data.Ratio
 import Data.Char
 
 import Orlin.Tokens
-import Orlin.Lexer
 
 class (Functor m, Applicative m, Monad m) => PMonad m where
   parseFail :: Pn -> String -> m a
@@ -29,9 +27,19 @@ data Ident = Ident Pn String
 getIdent :: Ident -> String
 getIdent (Ident _ x) = x
 
+data REPLCommandF unit
+  = DoNothing
+  | UnifyUnits [Ident] [unit]
+ deriving (Eq,Show,Ord)
 
-data Module unit num expr = Module Ident [(Pn,Decl unit num expr)]
- deriving (Eq, Show, Ord)
+type PreREPLCommand = REPLCommandF PreExpr
+type REPLCommand = REPLCommandF Unit
+
+preREPL2REPL :: PMonad m => PreREPLCommand -> m REPLCommand
+preREPL2REPL c =
+  case c of
+    DoNothing -> return DoNothing
+    UnifyUnits is us -> pure (UnifyUnits is) <*> mapM preexprToUnit us
 
 data PreExpr 
   = PExprDecLit Pn String
@@ -42,8 +50,13 @@ data PreExpr
   | PExprUnit PreExpr PreExpr
   | PExprParens Pn PreExpr
   | PExprNeg Pn PreExpr
-  | PExprToPower PreExpr PreExpr
   | PExprApply PreExpr PreExpr
+  | PExprBase (Located Token)
+  | PExprQuantify (Located Token) [Binder] PreExpr
+ deriving (Eq, Show, Ord)
+
+data Binder
+  = Binder [Ident] (Maybe PreExpr)
  deriving (Eq, Show, Ord)
 
 instance Loc PreExpr where
@@ -54,8 +67,10 @@ instance Loc PreExpr where
   loc (PExprIdent x) = loc x
   loc (PExprParens pn _) = pn
   loc (PExprUnit x _) = loc x
-  loc (PExprToPower x _) = loc x
   loc (PExprApply x _) = loc x
+  loc (PExprNeg pn _) = pn
+  loc (PExprBase tok) = loc tok
+  loc (PExprQuantify tok _ _) = loc tok
 
 data NumF a
   = NumZero
@@ -83,9 +98,25 @@ data Number
  deriving (Eq, Show, Ord)
 
 instance Loc Number where
-  loc (NumberLit n u) = loc n
+  loc (NumberLit n _) = loc n
   loc (NumberIdent i) = loc i
   loc (Number pn _) = pn
+
+data Expr ty
+  = Expr Pn ty (ExprF (Expr ty))
+ deriving (Eq, Show, Ord)
+
+data ExprF a
+  = ExprNumber (NumF a)
+  | ExprToPower a a
+  | ExprNumLit NumLit Unit
+  | ExprIdent Ident
+  | ExprApp a a
+  | ExprAbs Ident (Maybe Type) a
+ deriving (Eq, Show, Ord)
+
+instance Loc (Expr a) where
+  loc (Expr pn _ _) = pn
 
 data Unit
   = UMult Unit Unit
@@ -96,15 +127,41 @@ data Unit
   | UZero
  deriving (Eq, Show, Ord)
 
-data Decl unit num expr
+data Type
+  = Type Pn (TypeF Type)
+ deriving (Eq, Show, Ord)
+
+data TypeF a
+  = TyInt
+  | TyNat
+  | TyReal Unit
+  | TyIdent Ident
+  | TyArrow a a
+ deriving (Eq, Show, Ord)
+
+instance Loc Type where
+  loc (Type pn _) = pn
+
+data DeclF unit num typ expr
   = QuantityDecl Ident
   | UnitDecl Ident [Ident]
   | UnitDefn [Ident] unit
   | ConversionDecl num num
   | ConstantDefn [Ident] num
   | SymbConstantDefn [Ident] expr
+  | PrimDecl Ident typ
+  | TypeSig Ident typ
+  | Definition Ident expr
  deriving (Eq, Show, Ord)
 
+data ModuleF unit num typ expr = Module Ident [(Pn,DeclF unit num typ expr)]
+ deriving (Eq, Show, Ord)
+
+type PreDecl   = DeclF PreExpr PreExpr PreExpr PreExpr
+type Decl a    = DeclF Unit Number Type (Expr a)
+
+type PreModule = ModuleF PreExpr PreExpr PreExpr PreExpr
+type Module a  = ModuleF Unit Number Type (Expr a)
 
 interpDigit :: PMonad m => Pn -> Char -> m Integer
 interpDigit pn c =
@@ -209,6 +266,7 @@ preexprToExp e = do
       then return (numerator num')
       else parseFail (loc e) $ "can only raise to integer powers"
 
+
 parseNumOp :: PMonad m => Located Token -> a -> a -> m (NumF a)
 parseNumOp (L pn tok) x y = 
   case tok of
@@ -224,7 +282,7 @@ preexprToNumLit :: PMonad m => PreExpr -> m NumLit
 preexprToNumLit =
   preexprToNumF
      (\i -> parseFail (loc i) "identifiers not allowed in literals (likely cause: misplaced unit annotation)")
-     (\n u -> parseFail (loc u) "unit annotations cannot be nested")
+     (\_ u -> parseFail (loc u) "unit annotations cannot be nested")
      preexprToNumLit
      NumLit
 
@@ -257,6 +315,10 @@ preexprToNumF identF unitF subF inF e =
          do num' <- subF num
             exp' <- parseExp pn exp
             return (inF (loc num) $ NumToPower num' exp')
+    PExprBinOp num (L _ TOPOWER) exp -> do
+            num' <- subF num
+            exp' <- preexprToExp exp
+            return (inF (loc num) $ NumToPower num' exp')
     PExprBinOp x op y ->
       do x' <- subF x
          y' <- subF y
@@ -265,10 +327,7 @@ preexprToNumF identF unitF subF inF e =
     PExprIdent i -> identF i
     PExprParens _ x -> preexprToNumF identF unitF subF inF x
     PExprNeg pn x -> fmap (inF pn . NumNegate) $ subF x
-    PExprToPower num exp -> do
-            num' <- subF num
-            exp' <- preexprToExp exp
-            return (inF (loc num) $ NumToPower num' exp')
+    _ -> parseFail (loc e) $ unwords ["not a valid numeric value",show e]
 
 foldNumLit :: PMonad m => NumLit -> m Rational
 foldNumLit (NumLit _ l) =
@@ -310,7 +369,7 @@ preexprToUnit e =
         do u' <- preexprToUnit u
            exp' <- parseExp pn exp
            return $ UToPower u' exp'
-    PExprToPower u exp ->
+    PExprBinOp u (L _ TOPOWER) exp ->
         do u' <- preexprToUnit u
            exp' <- foldNumLit =<< preexprToNumLit exp
            if denominator exp' == 1
@@ -323,7 +382,82 @@ preexprToUnit e =
 
     _ -> parseFail (loc e) $ unwords ["invalid unit:", show e]
 
-predeclToDecl :: PMonad m => Decl PreExpr PreExpr PreExpr -> m (Decl Unit Number PreExpr)
+parseTypeOp :: PMonad m => Pn -> Token -> Pn -> Type -> Type -> m Type
+parseTypeOp _ SM_ARROW pn t1 t2 = return $ Type pn $ TyArrow t1 t2
+parseTypeOp pn tok _ _ _ = parseFail pn $ unwords ["not a valid type operator", show tok]
+
+preexprToType :: PMonad m => PreExpr -> m Type
+preexprToType e =
+  case e of
+    PExprParens _ x -> preexprToType x
+    PExprBase (L pn NAT)  -> return (Type pn TyNat)
+    PExprBase (L pn INT)  -> return (Type pn TyInt)
+    PExprBase (L pn REAL) -> return (Type pn $ TyReal UOne)
+    PExprUnit (PExprBase (L pn REAL)) u ->
+         do u' <- preexprToUnit u
+            return $ Type pn $ TyReal u'
+    PExprBinOp t1 (L pn op) t2 ->
+         do t1' <- preexprToType t1
+            t2' <- preexprToType t2
+            parseTypeOp pn op (loc t1) t1' t2'
+    _ -> parseFail (loc e) $ unwords ["not a valid type expression:", show e]
+
+parseExprOp :: PMonad m => Located Token -> Expr () -> Expr () -> m (Expr ())
+parseExprOp (L pn tok) x y =
+  case tok of
+    STAR   -> return $ Expr pn () $ ExprNumber $ NumMult x y
+    CDOT   -> return $ Expr pn () $ ExprNumber $ NumMult x y
+    SLASH  -> return $ Expr pn () $ ExprNumber $ NumDiv x y
+    PLUS   -> return $ Expr pn () $ ExprNumber $ NumPlus x y
+    MINUS  -> return $ Expr pn () $ ExprNumber $ NumMinus x y
+    HYPHEN -> return $ Expr pn () $ ExprNumber $ NumMinus x y
+    TOPOWER -> return $ Expr pn () $ ExprToPower x y
+    _ -> parseFail pn $ unwords ["unknown expression operator", show tok]
+
+
+preexprToExpr :: PMonad m => PreExpr -> m (Expr ())
+preexprToExpr e =
+  case e of
+    PExprParens _ x -> preexprToExpr x
+    PExprDecLit pn lit -> fmap (Expr pn () . ExprNumber . NumDec lit) $ interpFloatLit pn lit
+    PExprHexLit pn lit -> fmap (Expr pn () . ExprNumber . NumHex lit) $ interpHexLit pn lit
+    PExprSuperscript e (L pn exp) ->
+         do e' <- preexprToExpr e
+            exp' <- parseExp pn exp
+            return (Expr (loc e) () $ ExprNumber $ NumToPower e' exp')
+    PExprBinOp e1 op e2 ->
+       do e1' <- preexprToExpr e1
+          e2' <- preexprToExpr e2
+          parseExprOp op e1' e2'
+    PExprIdent i -> return (Expr (loc i) () $ ExprIdent i)
+    PExprUnit n u -> 
+       do n' <- preexprToNumLit n
+          u' <- preexprToUnit u
+          return (Expr (loc n) () $ ExprNumLit n' u')
+    PExprNeg pn x -> fmap (Expr pn () . ExprNumber . NumNegate) $ preexprToExpr x
+    PExprApply x y ->
+       do x' <- preexprToExpr x
+          y' <- preexprToExpr y
+          return (Expr (loc x) () $ ExprApp x' y')
+    PExprBase tok -> parseFail (loc tok) $ "invalid expression syntax"
+    PExprQuantify tok bs e -> preexprToExpr e >>= unwindExprBinders tok bs
+          
+unwindExprBinders :: PMonad m => Located Token -> [Binder] -> Expr () -> m (Expr ())
+unwindExprBinders (L pn tok) bs0 e0 =
+  case tok of
+    SM_LAMBDA -> unwind bs0 id >>= \f -> return (f e0)
+    _ -> parseFail pn $ unwords ["binder not allowed in expressions:", show tok]
+ 
+ where unwind [] f = return f
+       unwind (Binder is mt : bs) f =
+            do mt' <- maybe (return Nothing) (fmap Just . preexprToType) mt
+               let f' = unwind_is is mt' f
+               unwind bs f'
+
+       unwind_is [] _ f = f
+       unwind_is (i:is) mt f = \x -> Expr (loc i) () $ ExprAbs i mt (unwind_is is mt f x)
+
+predeclToDecl :: PMonad m => PreDecl -> m (Decl ())
 predeclToDecl d =
   case d of
     QuantityDecl i -> return $ QuantityDecl i
@@ -331,9 +465,12 @@ predeclToDecl d =
     UnitDefn is u -> fmap (UnitDefn is) $ preexprToUnit u
     ConversionDecl n1 n2 -> pure ConversionDecl <*> preexprToNumber n1 <*> preexprToNumber n2
     ConstantDefn is n -> fmap (ConstantDefn is) $ preexprToNumber n
-    SymbConstantDefn is e -> return (SymbConstantDefn is e)
+    SymbConstantDefn is e -> fmap (SymbConstantDefn is) $ preexprToExpr e
+    PrimDecl id ty -> fmap (PrimDecl id) (preexprToType ty)
+    TypeSig id ty -> fmap (TypeSig id) (preexprToType ty)
+    Definition id ex -> fmap (Definition id) $ preexprToExpr ex
+    
 
-premoduleToModule :: PMonad m => Module PreExpr PreExpr PreExpr
-                              -> m (Module Unit Number PreExpr)
+premoduleToModule :: PMonad m => PreModule -> m (Module ())
 premoduleToModule (Module i ds) = fmap (Module i) (mapM f ds)
   where f (n,d) = predeclToDecl d >>= \d' -> return (n,d')

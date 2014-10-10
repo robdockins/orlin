@@ -21,8 +21,93 @@ import Orlin.Compile
 --   Any missing entry in a unit map is understood to be 0.
 data Unit 
   = UnitZero
-  | Unit (Map (Either String String) Integer)
+  | Unit (Map (Either String UVar) Int)
  deriving (Eq,Show,Ord)
+
+type UVar = Int
+
+type USubst = Map UVar Unit
+
+unifyUnitList :: [Unit] -> USubst -> Comp (Maybe ([Unit], USubst))
+unifyUnitList []  subst = return  (Just ([],subst))
+unifyUnitList [u] subst = return (Just ([u],subst))
+unifyUnitList (u1:u2:us) subst =
+  do x <- unifyUnits u1 u2 subst
+     case x of
+        Nothing -> return Nothing
+        Just (u1',u2',subst') ->
+           do y <- unifyUnitList (u2':us) subst'
+              case y of
+                 Nothing -> return Nothing
+                 Just (us',subst'') -> return (Just (u1':us', subst''))
+
+
+unifyUnits :: Unit -> Unit -> USubst -> Comp (Maybe (Unit, Unit, USubst))
+unifyUnits UnitZero u subst = return $ Just (UnitZero,u,subst)
+unifyUnits u UnitZero subst = return $ Just (u,UnitZero,subst)
+unifyUnits u1 u2@(Unit u2map) subst =
+   do let u = unitMul u1 (Unit $ fmap negate u2map)
+      subst' <- dimUnify u subst
+      return $ fmap (\s -> (simplifyUnit u1 s, simplifyUnit u2 s, s)) subst'
+
+simplifyUnit :: Unit -> USubst -> Unit
+simplifyUnit UnitZero subst = UnitZero
+simplifyUnit (Unit u) subst =
+   Map.foldr unitMul unitDimensionless
+    $ Map.mapWithKey (\k n -> 
+            case k of
+               Left const -> Unit $ Map.singleton k n
+               Right v -> maybe (Unit $ Map.singleton k n)
+                                (\x -> unitToPower' (simplifyUnit x subst) n)
+                                (Map.lookup v subst)
+               ) u
+
+sign :: Int -> Int
+sign n
+  | n <= 0 = 1
+  | otherwise = -1
+
+dimUnify :: Unit -> USubst -> Comp (Maybe USubst)
+dimUnify UnitZero subst = return (Just subst)
+dimUnify (Unit u) subst =
+  case getSmallestVar u of
+     Nothing -> if Map.null u then return $ Just subst else return Nothing
+     Just (final,v,n,u') ->
+       let --idiv_neg n' = - (sign n * sign n' * (abs n' `div` abs n))
+           --imod n' = sign n * sign n' * (abs n' `mod` abs n)
+        in if final
+            then do
+               let uv  = mkUnit $ fmap (\n' -> - (n' `div` n)) u'
+               let u'' = mkUnit $ fmap (\n' -> n' `mod` n) u'
+               let subst' = Map.insert v uv subst
+               if isDimensionless u'' then return $ Just subst' else return Nothing
+            else do
+               newvar <- compFreshVar
+               let uv  = mkUnit $ Map.insert (Right newvar) 1 $ fmap (\n' -> -(n' `div` n)) u'
+               let u'' = mkUnit $ Map.insert (Right newvar) n $ fmap (\n' -> n' `mod` n) u'
+               let subst' = Map.insert v uv subst
+               dimUnify u'' subst'
+                      
+
+mkUnit :: Map (Either String UVar) Int -> Unit
+mkUnit = Unit . Map.filter (/=0) 
+
+isDimensionless :: Unit -> Bool
+isDimensionless UnitZero = False
+isDimensionless (Unit u) = Map.null u
+
+getSmallestVar :: Map (Either String UVar) Int -> Maybe (Bool,UVar,Int,Map (Either String UVar) Int)
+getSmallestVar m = fmap (\(f,v,n) -> (f,v,n,Map.delete (Right v) m)) $ findSmallest m
+
+ where findSmallest :: Map (Either String UVar) Int -> Maybe (Bool,UVar,Int)
+       findSmallest = Map.foldrWithKey f Nothing
+
+       f (Left k) n x = x
+       f (Right v) n Nothing = Just (True,v,n)
+       f (Right v) n (Just (_,v',n'))
+           | abs n < abs n' = Just (False,v,n)
+           | otherwise      = Just (False,v',n')
+
 
 unitDimensionless :: Unit
 unitDimensionless = Unit $ Map.empty
@@ -30,7 +115,7 @@ unitDimensionless = Unit $ Map.empty
 unitConstant :: String -> Unit
 unitConstant uname = Unit $ Map.insert (Left uname) 1 Map.empty
 
-unitVar :: String -> Unit
+unitVar :: UVar -> Unit
 unitVar var = Unit $ Map.insert (Right var) 1 Map.empty
 
 unitMul :: Unit -> Unit -> Unit
@@ -41,11 +126,21 @@ unitMul (Unit m1) (Unit m2) = Unit $ merge m1 m2
                         (\_ x y -> let z = x+y in if z == 0 then Nothing else Just z)
                         id id m1 m2
 
-unitToPower :: Pn -> Unit -> Integer -> Comp Unit
+unitToPower' :: Unit -> Int -> Unit
+unitToPower' UnitZero n
+    | n > 0  = UnitZero
+    | n < 0  = error "Orlin.Units.unitToPower': cannot raise zero unit to negative power"
+    | n == 0 = Unit Map.empty
+    | otherwise = error "Orlin.Units.unitToPower': impossible"
+unitToPower' (Unit m) 0 = Unit Map.empty
+unitToPower' (Unit m) n = Unit $ fmap (*n) m
+
+unitToPower :: Pn -> Unit -> Int -> Comp Unit
 unitToPower pn UnitZero n
     | n > 0  = return $ UnitZero
     | n < 0  = errMsg pn $ "cannot raise zero unit to negative power"
     | n == 0 = return $ Unit Map.empty
+    | otherwise = fail "Orlin.Units.unitToPower: impossible"
 unitToPower _ (Unit m) 0 = return $ Unit Map.empty
 unitToPower _ (Unit m) n = return $ Unit $ fmap (*n) m
 
@@ -73,6 +168,10 @@ data UnitInfo
     , unit_ast        :: AST.Unit  -- ^ The syntax of the unit as defined
     , unit_reduced    :: Unit      -- ^ The reduced form of the unit
     }
+  | VarUnitInfo
+    { unit_canon_name :: String
+    , unit_var        :: UVar
+    }
 
  deriving (Eq, Ord, Show) 
 
@@ -80,7 +179,7 @@ type QuantitySet = Set String
 type UnitTable = Map String UnitInfo
 
 
-buildUnitEnv :: AST.Module AST.Unit a b -> Comp (QuantitySet, UnitTable)
+buildUnitEnv :: AST.Module ty -> Comp (QuantitySet, UnitTable)
 buildUnitEnv (AST.Module _ ds) =
    do qty_set <- buildQuantitySet ds
       utbl <- buildUnitTable qty_set ds
@@ -95,6 +194,7 @@ computeReducedUnit pn utbl u =
          case Map.lookup (getIdent i) utbl of
             Just BaseUnitInfo{ unit_canon_name = uname } -> return $ unitConstant uname
             Just DerivedUnitInfo{ unit_reduced = red }   -> return $ red
+            Just VarUnitInfo{ unit_var = v } -> return $ unitVar v
             Nothing -> errMsg (loc i) $ unwords ["unit name not in scope:", getIdent i]
      AST.UMult u1 u2 ->
          do u1' <- computeReducedUnit pn utbl u1
@@ -106,13 +206,13 @@ computeReducedUnit pn utbl u =
             fmap (unitMul u1') (unitInv pn u2')
      AST.UToPower u exp -> 
          do u' <- computeReducedUnit pn utbl u
-            unitToPower pn u' exp
+            unitToPower pn u' (fromIntegral exp)
 
 
-buildQuantitySet :: [(Pn,AST.Decl AST.Unit a b)] -> Comp QuantitySet
+buildQuantitySet :: [(Pn,AST.Decl ty)] -> Comp QuantitySet
 buildQuantitySet = foldM buildQuantitySetDecl Set.empty
 
-buildQuantitySetDecl :: QuantitySet -> (Pn,AST.Decl AST.Unit a b) -> Comp QuantitySet
+buildQuantitySetDecl :: QuantitySet -> (Pn,AST.Decl ty) -> Comp QuantitySet
 buildQuantitySetDecl qty_set (pn,AST.QuantityDecl q) = 
     do when (Set.member (getIdent q) qty_set) (errMsg pn $ unwords ["physical quantity already declared:",getIdent q])
        return (Set.insert (getIdent q) qty_set)
@@ -120,10 +220,10 @@ buildQuantitySetDecl qty_set (pn,AST.QuantityDecl q) =
 buildQuantitySetDecl qty_set _ = return qty_set
 
 
-buildUnitTable :: Set String -> [(Pn,AST.Decl AST.Unit a b)] -> Comp UnitTable
+buildUnitTable :: Set String -> [(Pn,AST.Decl ty)] -> Comp UnitTable
 buildUnitTable qty_set = foldM (flip $ buildUnitTableDecl qty_set) Map.empty
 
-buildUnitTableDecl :: Set String -> (Pn,AST.Decl AST.Unit a b) -> UnitTable -> Comp UnitTable
+buildUnitTableDecl :: Set String -> (Pn,AST.Decl ty) -> UnitTable -> Comp UnitTable
 buildUnitTableDecl qty_set (pn,AST.UnitDecl qty_name []) tb = errMsg pn "internal error: empty unit declaration"
 buildUnitTableDecl qty_set (pn,AST.UnitDecl qty_name nms@(cname:_)) tb = foldM (addUnitDecl qty_name cname) tb nms
   where

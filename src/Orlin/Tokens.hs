@@ -19,6 +19,7 @@ data Located a = L Pn a
   deriving (Show, Eq, Ord)
 
 -- | Retrieve the element from a 'Located' package.
+unloc :: Located a -> a
 unloc (L _ x) = x
 
 -- | The main token datatype.
@@ -77,7 +78,10 @@ data Token
   | CONSTANT
   | PER
   | SYMBOLIC
-
+  | REAL
+  | INT
+  | NAT
+  | PRIMITIVE
  deriving (Eq,Show,Ord)
 
 
@@ -98,6 +102,10 @@ keyword_or_ident "per"        = PER
 keyword_or_ident "forall"     = FORALL
 keyword_or_ident "exists"     = EXISTS
 keyword_or_ident "symbolic"   = SYMBOLIC
+keyword_or_ident "real"       = REAL
+keyword_or_ident "nat"        = NAT
+keyword_or_ident "int"        = INT
+keyword_or_ident "primitive"  = PRIMITIVE
 
 keyword_or_ident s           = TIdent s
 

@@ -51,6 +51,8 @@ import Orlin.Lexer
 %token DEC_NUMBERLIT { L _ (DecNumberLit _) }
 %token HEX_NUMBERLIT { L _ (HexNumberLit _) }
 %token STRINGLIT { L _ (StringLit _) }
+%token SM_LAMBDA { L _ SM_LAMBDA }
+%token BIG_LAMBDA { L _ BIG_LAMBDA }
 
 -- keywords
 %token MODULE { L _ MODULE }
@@ -62,6 +64,13 @@ import Orlin.Lexer
 %token CONSTANT { L _ CONSTANT }
 %token PER { L _ PER }
 %token SYMBOLIC { L _ SYMBOLIC }
+%token PRIMITIVE { L _ PRIMITIVE }
+%token FORALL { L _ FORALL }
+%token EXISTS { L _ EXISTS }
+%token REAL { L _ REAL }
+%token INT { L _ INT }
+%token NAT { L _ NAT }
+
 
 %right SM_ARROW
 %left COMMA
@@ -88,7 +97,7 @@ import Orlin.Lexer
 %lexer { lexer } { L _ EOF }
 
 %name moduleParser module
-
+%name cmdParser cmd
 
 %%
 
@@ -103,12 +112,12 @@ pnlist(p)
 ident :: { Ident }
    : IDENT                               { Ident (loc $1) (token_str $1) }
 
-module :: { Module PreExpr PreExpr PreExpr }
+module :: { PreModule }
 module
    : MODULE ident WHERE
      LBRACE decl_group RBRACE            { Module $2 $5 }
 
-decl_group :: { [(Pn,Decl PreExpr PreExpr PreExpr)] }
+decl_group :: { [(Pn,PreDecl)] }
    : decl SEMI decl_group                { $1 : $3 }
    |                                     { [] }
 
@@ -117,11 +126,15 @@ expr_atom :: { PreExpr }
    | HEX_NUMBERLIT                       { PExprHexLit (loc $1) (token_str $1) }
    | ident                               { PExprIdent $1 }
    | LPAREN expr RPAREN                  { PExprParens (loc $1) $2 }
+   | REAL                                { PExprBase $1 }
+   | INT                                 { PExprBase $1 }
+   | NAT                                 { PExprBase $1 }
+
 
 expr_exp :: { PreExpr }
    : expr_atom                           { $1 }
    | expr_atom SUPERSCRIPT               { PExprSuperscript $1 (L (loc $2) (token_str $2)) }
-   | expr_atom TOPOWER expr_atom         { PExprToPower $1 $3 }
+   | expr_atom TOPOWER expr_atom         { PExprBinOp $1 $2 $3 }
 
 expr_unit :: { PreExpr }
    : expr_exp                            { $1 } 
@@ -143,11 +156,36 @@ expr_op :: { PreExpr }
    | expr_op CDOT expr_op                { PExprBinOp $1 $2 $3 }
    | expr_op STAR expr_op                { PExprBinOp $1 $2 $3 }
    | expr_op SLASH expr_op               { PExprBinOp $1 $2 $3 }
+   | expr_op SM_ARROW expr_op            { PExprBinOp $1 $2 $3 }
+
+expr_quantify :: { PreExpr }
+   : expr_op                             { $1 }
+   | SM_LAMBDA binders
+     COMMA expr_quantify                 { PExprQuantify $1 $2 $4 }
+   | BIG_LAMBDA binders
+     COMMA expr_quantify                 { PExprQuantify $1 $2 $4 }
+   | FORALL binders
+     COMMA expr_quantify                 { PExprQuantify $1 $2 $4 }
+   | EXISTS binders
+     COMMA expr_quantify                 { PExprQuantify $1 $2 $4 }
 
 expr :: { PreExpr }
-   : expr_op                             { $1 }
+   : expr_quantify                       { $1 }
 
-decl :: { (Pn,Decl PreExpr PreExpr PreExpr) }
+binders :: { [Binder] }
+   :                                     { [] }
+   | binder binders                      { ($1:$2) }
+
+binder :: { Binder }
+   : ident                               { Binder [$1] Nothing }
+   | LPAREN idents RPAREN                { Binder $2 Nothing }
+   | LPAREN idents COMMA expr RPAREN     { Binder $2 (Just $4) }
+
+idents :: { [Ident] }
+   : ident                               { [$1] }
+   | ident idents                        { ($1:$2) }
+
+decl :: { (Pn,PreDecl) }
 decl
    : QUANTITY ident                      { (loc $1, QuantityDecl $2) }
    | UNIT ident ident                    { (loc $1, UnitDecl $2 [$3]) }
@@ -163,6 +201,20 @@ decl
    | SYMBOLIC CONSTANT ident
         ALIAS ident
         DEFS expr                        { (loc $1, SymbConstantDefn [$3,$5] $7) }
+   | PRIMITIVE ident COLON expr          { (loc $1, PrimDecl $2 $4) }
+   | ident COLON expr                    { (loc $1, TypeSig $1 $3) }
+   | ident DEFS expr                     { (loc $1, Definition $1 $3) }
+
+cmd :: { PreREPLCommand }
+   :                                     { DoNothing } 
+   | UNIT unifyList                      { UnifyUnits [] $2 }
+   | UNIT LBRACE list(ident) RBRACE
+        unifyList                        { UnifyUnits $3 $5 }
+
+unifyList :: { [PreExpr] }
+unifyList
+   : expr EQUAL expr                     { [$1,$3] }
+   | expr EQUAL unifyList                { ($1:$3) }
 
 {
 data Pushback
@@ -282,11 +334,17 @@ returnToken :: Located Token -> ParseState -> ParseState
 returnToken tok st = st{ pushback_tok = PushbackTok tok }
 
 
-runModuleParser :: FilePath -> String -> Either [(Pn,String)] (Module PreExpr PreExpr PreExpr)
+runModuleParser :: FilePath -> String -> Either [(Pn,String)] PreModule
 runModuleParser fp str =
    let (st',x) = unP moduleParser (initParseState fp str)
     in case x of
           Nothing -> Left (parse_errors st')
           Just m -> Right m
 
+runCommandParser :: String -> Either [(Pn,String)] PreREPLCommand
+runCommandParser str =
+  let (st',x) = unP cmdParser (initParseState "" str)
+   in case x of
+         Nothing -> Left (parse_errors st')
+	 Just m -> Right m
 }
