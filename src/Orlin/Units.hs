@@ -2,6 +2,7 @@ module Orlin.Units where
 
 import           Control.Monad
 
+import           Data.List
 import           Data.Map.Strict( Map )
 import qualified Data.Map.Strict as Map
 import           Data.Set( Set )
@@ -24,6 +25,29 @@ data Unit
   | Unit (Map (Either String UVar) Int)
  deriving (Eq,Show,Ord)
 
+displayUnit :: Unit -> String
+displayUnit UnitZero = "0"
+displayUnit (Unit m)
+  | Map.null m = "1"
+  | otherwise  = 
+      concat $ intersperse "·" $ map (uncurry displayOneUnit) $ Map.toList m
+
+displayOneUnit :: Either String UVar -> Int -> String
+displayOneUnit nm n = either id (("_u"++) . show) nm ++ map toSuper (show n)
+  where toSuper '1' = '¹'
+        toSuper '2' = '²'
+        toSuper '3' = '³'
+        toSuper '4' = '⁴'
+        toSuper '5' = '⁵'
+        toSuper '6' = '⁶'
+        toSuper '7' = '⁷'
+        toSuper '8' = '⁸'
+        toSuper '9' = '⁹'
+        toSuper '0' = '⁰'
+        toSuper '-' = '⁻'
+        toSuper '+' = '⁺'
+        toSuper c = c
+
 type UVar = Int
 
 type USubst = Map UVar Unit
@@ -39,7 +63,9 @@ unifyUnitList (u1:u2:us) subst =
            do y <- unifyUnitList (u2':us) subst'
               case y of
                  Nothing -> return Nothing
-                 Just (us',subst'') -> return (Just (u1':us', subst''))
+                 Just (us',subst'') -> 
+                    do let us'' = map (\u -> simplifyUnit u subst'') (u1':us')
+                       return (Just (us'', subst''))
 
 
 unifyUnits :: Unit -> Unit -> USubst -> Comp (Maybe (Unit, Unit, USubst))
@@ -56,7 +82,7 @@ simplifyUnit (Unit u) subst =
    Map.foldr unitMul unitDimensionless
     $ Map.mapWithKey (\k n -> 
             case k of
-               Left const -> Unit $ Map.singleton k n
+               Left _ -> Unit $ Map.singleton k n
                Right v -> maybe (Unit $ Map.singleton k n)
                                 (\x -> unitToPower' (simplifyUnit x subst) n)
                                 (Map.lookup v subst)

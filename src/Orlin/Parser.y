@@ -214,6 +214,7 @@ cmd :: { PreREPLCommand }
    | TYPE unifyList                      { UnifyTypes [] $2 }
    | TYPE LBRACE list(ident) RBRACE
         unifyList                        { UnifyTypes $3 $5 }
+   | TYPE expr                           { Typecheck $2 }
 
 unifyList :: { [PreExpr] }
 unifyList

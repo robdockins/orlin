@@ -1,6 +1,7 @@
 module Orlin.CmdLine where
 
-import Control.Applicative
+import           Control.Applicative
+
 import           Data.Map.Strict( Map )
 import qualified Data.Map.Strict as Map
 import           Data.Set( Set )
@@ -39,6 +40,7 @@ runrepl init =
 commands :: [ShellCommand REPL]
 commands =
   [ exitCommand "quit"
+  , exitCommand "q"
   , helpCommand "help"
   ]
 
@@ -70,6 +72,12 @@ shellDisplayMsg (Err (Just pn) msg)  = shellPutErrLn $ unwords [displayPn pn, ms
 
 evalCmd :: REPLCommand -> Sh REPL ()
 evalCmd DoNothing = return ()
+evalCmd (Typecheck e) =
+  do shellPutStrLn $ unwords $ ["attempting to typecheck",show e]
+     st <- getShellSt
+     (t,usub,tsub) <- runShComp $ inferType (unit_table st) e Map.empty Map.empty
+     shellPutStrLn $ show (exprTy t)
+
 evalCmd (UnifyTypes is ts) =
   do shellPutStrLn $ unwords $ ["attempting to unify"]++map show ts
      st <- getShellSt
@@ -106,17 +114,17 @@ evalCmd (UnifyUnits is us) =
      case subst of
        Nothing -> shellPutStrLn "units do not unify"
        Just (us_final,s) -> do
-           mapM_ (shellPutStrLn . show) us_final
-           shellPutStrLn "unifier"
+           --mapM_ (shellPutStrLn . displayUnit) us_final
+           shellPutStrLn $ displayUnit $ head us_final 
+           shellPutStrLn "unifier:"
            let showUnifier (i,v) = do
                  let u = fmap (\u -> simplifyUnit u s) $ Map.lookup v s
-                 shellPutStrLn $ unwords [getIdent i,"("++show v++")","=",show u]
+                 let showu = maybe ("_u"++show v) displayUnit u
+                 shellPutStrLn $ unwords [" ",getIdent i,"=",showu]
            mapM_ showUnifier $ zip is vs
-           shellPutStrLn "subst table"
-           mapM_ (shellPutStrLn . show) $ Map.toList s
 
 cmdLine :: [String] -> IO ()
-cmdLine [x] = 
+cmdLine [x] =
  do (q,ut,st) <- buildUnitEnv' x
     runrepl (REPL q ut st)
     return ()

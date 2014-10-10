@@ -27,14 +27,15 @@ data Ident = Ident Pn String
 getIdent :: Ident -> String
 getIdent (Ident _ x) = x
 
-data REPLCommandF unit typ
+data REPLCommandF unit typ expr
   = DoNothing
   | UnifyUnits [Ident] [unit]
   | UnifyTypes [Ident] [typ]
+  | Typecheck expr
  deriving (Eq,Show,Ord)
 
-type PreREPLCommand = REPLCommandF PreExpr PreExpr
-type REPLCommand = REPLCommandF Unit Type
+type PreREPLCommand = REPLCommandF PreExpr PreExpr PreExpr
+type REPLCommand = REPLCommandF Unit Type (Expr ())
 
 preREPL2REPL :: PMonad m => PreREPLCommand -> m REPLCommand
 preREPL2REPL c =
@@ -42,6 +43,7 @@ preREPL2REPL c =
     DoNothing -> return DoNothing
     UnifyUnits is us -> pure (UnifyUnits is) <*> mapM preexprToUnit us
     UnifyTypes is ts -> pure (UnifyTypes is) <*> mapM preexprToType ts
+    Typecheck e -> fmap Typecheck $ preexprToExpr e
 
 data PreExpr 
   = PExprDecLit Pn String
@@ -83,7 +85,7 @@ data NumF a
   | NumPlus a a
   | NumMinus a a
   | NumNegate a
-  | NumToPower a Integer
+  | NumToPower a Int
  deriving (Eq, Show, Ord)
 
 
@@ -316,11 +318,11 @@ preexprToNumF identF unitF subF inF e =
     PExprSuperscript num (L pn exp) ->
          do num' <- subF num
             exp' <- parseExp pn exp
-            return (inF (loc num) $ NumToPower num' exp')
+            return (inF (loc num) $ NumToPower num' (fromIntegral exp'))
     PExprBinOp num (L _ TOPOWER) exp -> do
             num' <- subF num
             exp' <- preexprToExp exp
-            return (inF (loc num) $ NumToPower num' exp')
+            return (inF (loc num) $ NumToPower num' (fromIntegral exp'))
     PExprBinOp x op y ->
       do x' <- subF x
          y' <- subF y
@@ -370,7 +372,7 @@ preexprToUnit e =
     PExprSuperscript u (L pn exp) ->
         do u' <- preexprToUnit u
            exp' <- parseExp pn exp
-           return $ UToPower u' exp'
+           return $ UToPower u' (fromIntegral exp')
     PExprBinOp u (L _ TOPOWER) exp ->
         do u' <- preexprToUnit u
            exp' <- foldNumLit =<< preexprToNumLit exp
@@ -426,7 +428,7 @@ preexprToExpr e =
     PExprSuperscript e (L pn exp) ->
          do e' <- preexprToExpr e
             exp' <- parseExp pn exp
-            return (Expr (loc e) () $ ExprNumber $ NumToPower e' exp')
+            return (Expr (loc e) () $ ExprNumber $ NumToPower e' (fromIntegral exp'))
     PExprBinOp e1 op e2 ->
        do e1' <- preexprToExpr e1
           e2' <- preexprToExpr e2
