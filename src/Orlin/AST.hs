@@ -57,6 +57,7 @@ data PreExpr
   | PExprApply PreExpr PreExpr
   | PExprBase (Located Token)
   | PExprQuantify (Located Token) [Binder] PreExpr
+  | PExprUnitKind Pn
  deriving (Eq, Show, Ord)
 
 data Binder
@@ -75,6 +76,7 @@ instance Loc PreExpr where
   loc (PExprNeg pn _) = pn
   loc (PExprBase tok) = loc tok
   loc (PExprQuantify tok _ _) = loc tok
+  loc (PExprUnitKind pn) = pn
 
 data NumF a
   = NumZero
@@ -117,6 +119,8 @@ data ExprF a
   | ExprIdent Ident
   | ExprApp a a
   | ExprAbs Ident (Maybe Type) a
+  | ExprTAbs Ident a
+  | ExprUAbs Ident a
  deriving (Eq, Show, Ord)
 
 instance Loc (Expr a) where
@@ -141,6 +145,7 @@ data TypeF unit a
   | TyReal unit
   | TyIdent Ident
   | TyArrow a a
+  | TyUForall Ident a
  deriving (Eq, Show, Ord)
 
 instance Loc Type where
@@ -404,6 +409,11 @@ preexprToType e =
          do t1' <- preexprToType t1
             t2' <- preexprToType t2
             parseTypeOp pn op (loc t1) t1' t2'
+    PExprQuantify (L pn BIG_LAMBDA) [] e -> preexprToType e
+    PExprQuantify (L pn BIG_LAMBDA) (Binder is (Just (PExprUnitKind _)):bs) e -> 
+         do e' <- preexprToType (PExprQuantify (L pn BIG_LAMBDA) bs e)
+            let f i x = Type (loc i) $ TyUForall i x
+            return $ foldr f e' is
     _ -> parseFail (loc e) $ unwords ["not a valid type expression:", show e]
 
 parseExprOp :: PMonad m => Located Token -> Expr () -> Expr () -> m (Expr ())
@@ -445,21 +455,33 @@ preexprToExpr e =
           return (Expr (loc x) () $ ExprApp x' y')
     PExprBase tok -> parseFail (loc tok) $ "invalid expression syntax"
     PExprQuantify tok bs e -> preexprToExpr e >>= unwindExprBinders tok bs
+    PExprUnitKind pn -> parseFail pn "'unit' is not a valid expression"
 
 unwindExprBinders :: PMonad m => Located Token -> [Binder] -> Expr () -> m (Expr ())
 unwindExprBinders (L pn tok) bs0 e0 =
   case tok of
-    SM_LAMBDA -> unwind bs0 id >>= \f -> return (f e0)
+    SM_LAMBDA -> unwind bs0 
+    BIG_LAMBDA -> unwind_big bs0
     _ -> parseFail pn $ unwords ["binder not allowed in expressions:", show tok]
  
- where unwind [] f = return f
-       unwind (Binder is mt : bs) f =
-            do mt' <- maybe (return Nothing) (fmap Just . preexprToType) mt
-               let f' = unwind_is is mt' f
-               unwind bs f'
+ where unwind_big [] = return e0
+       unwind_big (Binder is (Just (PExprUnitKind _)) : bs) =
+          do e <- unwind_big bs
+             return $ unwind_big_is is e
+       unwind_big _ = parseFail pn $ "ill formed big lambda"
 
-       unwind_is [] _ f = f
-       unwind_is (i:is) mt f = \x -> Expr (loc i) () $ ExprAbs i mt (unwind_is is mt f x)
+       unwind_big_is [] e = e
+       unwind_big_is (i:is) e = Expr (loc i) () $ ExprUAbs i $ unwind_big_is is e
+
+
+       unwind [] = return e0
+       unwind (Binder is mt : bs) =
+            do e <- unwind bs
+               mt' <- maybe (return Nothing) (fmap Just . preexprToType) mt
+               return $ unwind_is is mt' e
+
+       unwind_is [] _ e = e
+       unwind_is (i:is) mt e = Expr (loc i) () $ ExprAbs i mt (unwind_is is mt e)
 
 predeclToDecl :: PMonad m => PreDecl -> m (Decl ())
 predeclToDecl d =

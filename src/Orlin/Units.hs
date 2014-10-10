@@ -25,16 +25,22 @@ data Unit
   | Unit (Map (Either String UVar) Int)
  deriving (Eq,Show,Ord)
 
-displayUnit :: Unit -> String
-displayUnit UnitZero = "0"
-displayUnit (Unit m)
+displayUnit :: USubst -> Unit -> String
+displayUnit usub UnitZero = "0"
+displayUnit usub (Unit m)
   | Map.null m = "1"
   | otherwise  = 
-      concat $ intersperse "·" $ map (uncurry displayOneUnit) $ Map.toList m
+      concat $ intersperse "·" $ map (uncurry (displayOneUnit usub)) $ Map.toList m
 
-displayOneUnit :: Either String UVar -> Int -> String
-displayOneUnit nm n = either id (("_u"++) . show) nm ++ map toSuper (show n)
-  where toSuper '1' = '¹'
+displayOneUnit :: USubst -> Either String UVar -> Int -> String
+displayOneUnit usub nm n = either id displayVar nm ++ map toSuper (show n)
+  where displayVar v =
+            case Map.lookup v usub of
+              Nothing -> "_u" ++ show v
+              Just (Left nm) -> nm
+              Just (Right u) -> displayUnit usub u
+
+        toSuper '1' = '¹'
         toSuper '2' = '²'
         toSuper '3' = '³'
         toSuper '4' = '⁴'
@@ -50,7 +56,7 @@ displayOneUnit nm n = either id (("_u"++) . show) nm ++ map toSuper (show n)
 
 type UVar = Int
 
-type USubst = Map UVar Unit
+type USubst = Map UVar (Either String Unit)
 
 unifyUnitList :: [Unit] -> USubst -> Comp (Maybe ([Unit], USubst))
 unifyUnitList []  subst = return  (Just ([],subst))
@@ -83,9 +89,11 @@ simplifyUnit (Unit u) subst =
     $ Map.mapWithKey (\k n -> 
             case k of
                Left _ -> Unit $ Map.singleton k n
-               Right v -> maybe (Unit $ Map.singleton k n)
-                                (\x -> unitToPower' (simplifyUnit x subst) n)
-                                (Map.lookup v subst)
+               Right v ->
+                  case Map.lookup v subst of
+                    Nothing -> Unit $ Map.singleton k n
+                    Just (Left nm) -> Unit $ Map.singleton k n
+                    Just (Right x) -> unitToPower' (simplifyUnit x subst) n
                ) u
 
 sign :: Int -> Int
@@ -105,13 +113,13 @@ dimUnify (Unit u) subst =
             then do
                let uv  = mkUnit $ fmap (\n' -> - (n' `div` n)) u'
                let u'' = mkUnit $ fmap (\n' -> n' `mod` n) u'
-               let subst' = Map.insert v uv subst
+               let subst' = Map.insert v (Right uv) subst
                if isDimensionless u'' then return $ Just subst' else return Nothing
             else do
                newvar <- compFreshVar
                let uv  = mkUnit $ Map.insert (Right newvar) 1 $ fmap (\n' -> -(n' `div` n)) u'
                let u'' = mkUnit $ Map.insert (Right newvar) n $ fmap (\n' -> n' `mod` n) u'
-               let subst' = Map.insert v uv subst
+               let subst' = Map.insert v (Right uv) subst
                dimUnify u'' subst'
                       
 

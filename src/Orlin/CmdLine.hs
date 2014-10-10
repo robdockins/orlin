@@ -73,13 +73,14 @@ shellDisplayMsg (Err (Just pn) msg)  = shellPutErrLn $ unwords [displayPn pn, ms
 evalCmd :: REPLCommand -> Sh REPL ()
 evalCmd DoNothing = return ()
 evalCmd (Typecheck e) =
-  do shellPutStrLn $ unwords $ ["attempting to typecheck",show e]
+  do -- shellPutStrLn $ unwords $ ["attempting to typecheck",show e]
+     shellPutStrLn ""
      st <- getShellSt
-     (t,usub,tsub) <- runShComp $ inferType (unit_table st) e Map.empty Map.empty
-     shellPutStrLn $ show (exprTy t)
+     (t,usub,tsub) <- runShComp $ inferType (unit_table st) Map.empty e Map.empty Map.empty
+     shellPutStrLn $ displayType usub tsub (exprTy t)
 
 evalCmd (UnifyTypes is ts) =
-  do shellPutStrLn $ unwords $ ["attempting to unify"]++map show ts
+  do -- shellPutStrLn $ unwords $ ["attempting to unify"]++map show ts
      st <- getShellSt
      (vs,x) <- runShComp $ do
          vs <- mapM (const compFreshVar) is
@@ -92,16 +93,18 @@ evalCmd (UnifyTypes is ts) =
      case x of
         Nothing -> shellPutStrLn "types do not unify"
         Just (ts_final,usub,tsub) -> do
-           mapM_ (shellPutStrLn . show) ts_final
+           mapM_ (shellPutStrLn . displayType usub tsub) ts_final
+           shellPutStrLn "unifier:"
            let showUnifier (i,v) = do
-                 let u = fmap (\u -> simplifyUnit u usub) $ Map.lookup v usub
-                 shellPutStrLn $ unwords [getIdent i,"("++show v++")","=",show u]
+                 let u = fmap (either unitConstant (\u -> simplifyUnit u usub)) $ Map.lookup v usub
+                 let showu = maybe ("_u"++show v) (displayUnit usub) u
+                 shellPutStrLn $ unwords [" ",getIdent i,"=",showu]
            mapM_ showUnifier $ zip is vs
            shellPutStrLn "subst table"
            mapM_ (shellPutStrLn . show) $ Map.toList usub
 
 evalCmd (UnifyUnits is us) =
-  do shellPutStrLn $ unwords $ ["attempting to unify"]++map show us
+  do -- shellPutStrLn $ unwords $ ["attempting to unify"]++map show us
      st <- getShellSt
      (vs,subst) <- runShComp $ do
          vs <- mapM (const compFreshVar) is
@@ -113,13 +116,13 @@ evalCmd (UnifyUnits is us) =
          return (vs,x)
      case subst of
        Nothing -> shellPutStrLn "units do not unify"
-       Just (us_final,s) -> do
+       Just (us_final,usub) -> do
            --mapM_ (shellPutStrLn . displayUnit) us_final
-           shellPutStrLn $ displayUnit $ head us_final 
+           shellPutStrLn $ displayUnit usub $ head us_final 
            shellPutStrLn "unifier:"
            let showUnifier (i,v) = do
-                 let u = fmap (\u -> simplifyUnit u s) $ Map.lookup v s
-                 let showu = maybe ("_u"++show v) displayUnit u
+                 let u = fmap (either unitConstant (\u -> simplifyUnit u usub)) $ Map.lookup v usub
+                 let showu = maybe ("_u"++show v) (displayUnit usub) u
                  shellPutStrLn $ unwords [" ",getIdent i,"=",showu]
            mapM_ showUnifier $ zip is vs
 

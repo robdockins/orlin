@@ -130,6 +130,7 @@ expr_atom :: { PreExpr }
    | REAL                                { PExprBase $1 }
    | INT                                 { PExprBase $1 }
    | NAT                                 { PExprBase $1 }
+   | UNIT                                { PExprUnitKind (loc $1) }
 
 
 expr_exp :: { PreExpr }
@@ -180,7 +181,7 @@ binders :: { [Binder] }
 binder :: { Binder }
    : ident                               { Binder [$1] Nothing }
    | LPAREN idents RPAREN                { Binder $2 Nothing }
-   | LPAREN idents COMMA expr RPAREN     { Binder $2 (Just $4) }
+   | LPAREN idents COLON expr RPAREN     { Binder $2 (Just $4) }
 
 idents :: { [Ident] }
    : ident                               { [$1] }

@@ -33,38 +33,82 @@ runTC m = runStateT m initTCState
 type TVar = Int
 type TSubst = Map TVar GType
 
-{-
-data Expr ty
-  = Expr Pn ty (ExprF (Expr ty))
- deriving (Eq, Show, Ord)
 
-data ExprF a
-  = ExprNumber (NumF a)
-  | ExprToPower a a
-  | ExprNumLit NumLit Unit
-  | ExprIdent Ident
-  | ExprApp a a
-  | ExprAbs Ident (Maybe Type) a
- deriving (Eq, Show, Ord)
--}
+displayType
+   :: USubst
+   -> TSubst
+   -> GType 
+   -> String
+displayType usub tsub (GTypeVar v) =
+  case Map.lookup v tsub of
+     Nothing -> "_t" ++ show v
+     Just ty -> displayType usub tsub ty
+displayType usub tsub (GType x) =
+  case x of
+    TyInt -> "ℤ"
+    TyNat -> "ℕ"
+    TyIdent i -> getIdent i
+    TyReal (UnitZero) -> "ℝ⟨0⟩"
+    TyReal u@(Unit m)
+       | Map.null m -> "ℝ"
+       | otherwise -> "ℝ⟨" ++ displayUnit usub u ++ "⟩"
+    TyArrow t1 t2 -> "("++displayType usub tsub t1 ++ " → " ++ displayType usub tsub t2++")"
+    TyUForall i t -> "∀"++(getIdent i)++", "++displayType usub tsub t
+
+
+type TypeTable = Map String GType
 
 inferType 
    :: UnitTable
+   -> TypeTable
    -> Expr ()
    -> USubst
    -> TSubst
    -> Comp (Expr GType, USubst, TSubst)
-inferType utab ex@(Expr pn _ x) usub tsub =
+inferType utab ttab ex@(Expr pn _ x) usub tsub =
   case x of
-    ExprNumber _    -> reduceNumber ex >>= \ex' -> inferNumber utab ex' usub tsub
+    ExprNumber _    -> reduceNumber ex >>= \ex' -> inferNumber utab ttab ex' usub tsub
     ExprNumLit nl u ->
       do u' <- computeReducedUnit pn utab u
          let r = reduceNumLit nl
          return (Expr pn (GType (TyReal u')) $ ExprNumber $ NumDec "" r, usub, tsub)
-    ExprIdent i -> errMsg pn $ unwords ["typing identifiers not implemented!"]
-    ExprToPower _ _ -> errMsg pn $ unwords ["raising general expressions to powers not implemented!"]
-    _ -> errMsg pn "AASDF!"
- 
+    ExprToPower _ _ -> errMsg pn $ unwords ["typing of raising general expressions to powers not implemented!"]
+
+    ExprIdent i -> 
+        case Map.lookup (getIdent i) ttab of
+          Nothing -> errMsg pn $ unwords ["identifier not in scope:",getIdent i]
+          Just ty -> return (Expr pn ty $ ExprIdent i, usub, tsub)
+
+    ExprApp e1 e2 ->
+       do (e1',usub1,tsub1) <- inferType utab ttab e1 usub tsub
+          (e2',usub2,tsub2) <- inferType utab ttab e2 usub1 tsub1
+          resvar <- compFreshVar
+          let ty = (GType (TyArrow (exprTy e2') (GTypeVar resvar)))
+          r <- unifyTypes ty (exprTy e1') usub2 tsub2
+          case r of
+             Nothing -> errMsg pn $ unwords ["could not unify"
+                                            , displayType usub2 tsub2 (exprTy e1')
+                                            , "with"
+                                            , displayType usub2 tsub2 ty]
+             Just (_,_,usub3,tsub3) ->
+                return (Expr pn (GTypeVar resvar) $ ExprApp e1' e2', usub3, tsub3)
+
+    ExprUAbs i e -> do
+       uv <- compFreshVar
+       let utab' = Map.insert (getIdent i) (VarUnitInfo (getIdent i) uv) utab
+       let usub' = Map.insert uv (Left (getIdent i)) usub
+       (e', usub'', tsub') <- inferType utab' ttab e usub' tsub
+       return (Expr pn (GType (TyUForall i (exprTy e'))) $ ExprUAbs i e', usub'', tsub')
+
+    ExprAbs i mty e -> do
+       targ <- case mty of
+                  Just ty -> computeReducedType utab ty
+                  Nothing -> fmap GTypeVar $ compFreshVar
+       let ttab' = Map.insert (getIdent i) targ ttab
+       (e',usub',tsub') <- inferType utab ttab' e usub tsub
+       return (Expr pn (GType (TyArrow targ (exprTy e'))) $ ExprAbs i mty e', usub', tsub')
+       
+
 exprTy :: Expr a -> a
 exprTy (Expr _ t _) = t
 
@@ -87,11 +131,12 @@ reduceNumber ex = return ex -- FIXME, implement number folding...
 
 inferNumber 
    :: UnitTable
+   -> TypeTable
    -> Expr ()
    -> USubst
    -> TSubst
    -> Comp (Expr GType, USubst, TSubst)
-inferNumber utab (Expr pn _ (ExprNumber num)) usub tsub =
+inferNumber utab ttab (Expr pn _ (ExprNumber num)) usub tsub =
    case num of
 
      NumZero ->
@@ -107,36 +152,38 @@ inferNumber utab (Expr pn _ (ExprNumber num)) usub tsub =
         in return (Expr pn ty (ExprNumber $ NumHex str r), usub, tsub)
 
      NumMult x y -> do
-       (x', usub1,tsub1) <- inferType utab x usub  tsub
-       (y', usub2,tsub2) <- inferType utab y usub1 tsub1
-       case exprTy x' of
-         GType (TyReal ux) ->
-           case exprTy y' of
-             GType (TyReal uy) ->
-               do let rty' = GType (TyReal (unitMul ux uy))
-                  return (Expr pn rty' $ ExprNumber $ NumMult x' y', usub2, tsub2)
-
-             _ -> errMsg pn $ unwords ["real number type expected"]
-
-         _ -> errMsg pn $ unwords ["real number type expected"]
+       (x', usub1,tsub1) <- inferType utab ttab x usub  tsub
+       (y', usub2,tsub2) <- inferType utab ttab y usub1 tsub1
+       ux <- compFreshVar
+       uy <- compFreshVar
+       rx <- unifyTypes (GType (TyReal (unitVar ux))) (exprTy x') usub2 tsub2
+       case rx of
+         Just (GType (TyReal ux'),_,usub3,tsub3) -> do
+           ry <- unifyTypes (GType (TyReal (unitVar uy))) (exprTy y') usub3 tsub3
+           case ry of
+             Just (GType (TyReal uy'),_,usub4,tsub4) -> do
+               return (Expr pn (GType (TyReal (unitMul ux' uy'))) $ ExprNumber $ NumMult x' y', usub4, tsub4)
+             _ -> errMsg pn $ "real number type expected"
+         _ -> errMsg pn $ "real number type expected"
 
      NumDiv x y -> do
-       (x', usub1,tsub1) <- inferType utab x usub  tsub
-       (y', usub2,tsub2) <- inferType utab y usub1 tsub1
-       case exprTy x' of
-         GType (TyReal ux) ->
-           case exprTy y' of
-             GType (TyReal uy) ->
-               do uy' <- unitInv (loc y) uy
-                  let rty' = GType (TyReal (unitMul ux uy'))
-                  return (Expr pn rty' $ ExprNumber $ NumDiv x' y', usub2, tsub2)
-
-             _ -> errMsg pn $ unwords ["real number type expected"]
-
-         _ -> errMsg pn $ unwords ["real number type expected"]
+       (x', usub1,tsub1) <- inferType utab ttab x usub  tsub
+       (y', usub2,tsub2) <- inferType utab ttab y usub1 tsub1
+       ux <- compFreshVar
+       uy <- compFreshVar
+       rx <- unifyTypes (GType (TyReal (unitVar ux))) (exprTy x') usub2 tsub2
+       case rx of
+         Just (GType (TyReal ux'),_,usub3,tsub3) -> do
+           ry <- unifyTypes (GType (TyReal (unitVar uy))) (exprTy y') usub3 tsub3
+           case ry of
+             Just (GType (TyReal uy'),_,usub4,tsub4) -> do
+               uy'' <- unitInv (loc y) uy'
+               return (Expr pn (GType (TyReal (unitMul ux' uy''))) $ ExprNumber $ NumDiv x' y', usub4, tsub4)
+             _ -> errMsg pn $ "real number type expected"
+         _ -> errMsg pn $ "real number type expected"
 
      NumToPower x n -> do
-       (x', usub1,tsub1) <- inferType utab x usub  tsub
+       (x', usub1,tsub1) <- inferType utab ttab x usub  tsub
        uv <- compFreshVar 
        let rty = GType (TyReal (unitVar uv))
        r <- unifyTypes rty (exprTy x') usub1 tsub1
@@ -149,7 +196,7 @@ inferNumber utab (Expr pn _ (ExprNumber num)) usub tsub =
 
 
      NumNegate x -> do
-       (x', usub1,tsub1) <- inferType utab x usub  tsub
+       (x', usub1,tsub1) <- inferType utab ttab x usub  tsub
        uv <- compFreshVar 
        let rty = GType (TyReal (unitVar uv))
        r <- unifyTypes rty (exprTy x') usub1 tsub1
@@ -159,31 +206,38 @@ inferNumber utab (Expr pn _ (ExprNumber num)) usub tsub =
             return (Expr pn t' $ ExprNumber $ NumNegate x', usub2, tsub2)
 
      NumPlus x y -> do
-       (x', usub1,tsub1) <- inferType utab x usub  tsub
-       (y', usub2,tsub2) <- inferType utab y usub1 tsub1
+       (x', usub1,tsub1) <- inferType utab ttab x usub  tsub
+       (y', usub2,tsub2) <- inferType utab ttab y usub1 tsub1
        uv <- compFreshVar 
        let rty = GType (TyReal (unitVar uv))
        r <- unifyTypeList [rty,exprTy x',exprTy y'] usub2 tsub2
        case r of
           Just (rty':_,usub3,tsub3) ->
              return (Expr pn rty' (ExprNumber (NumPlus x' y')), usub3, tsub3)
-          _ -> errMsg pn $ unwords ["could not unify real number types",show x,show y]
+          _ -> errMsg pn $ unwords [ "could not unify real number types"
+                                   , displayType usub2 tsub2 (exprTy x')
+                                   , displayType usub2 tsub2 (exprTy y')
+                                   ]
 
 
      NumMinus x y -> do
-       (x', usub1,tsub1) <- inferType utab x usub  tsub
-       (y', usub2,tsub2) <- inferType utab y usub1 tsub1
+       (x', usub1,tsub1) <- inferType utab ttab x usub  tsub
+       (y', usub2,tsub2) <- inferType utab ttab y usub1 tsub1
        uv <- compFreshVar 
        let rty = GType (TyReal (unitVar uv))
        r <- unifyTypeList [rty,exprTy x',exprTy y'] usub2 tsub2
        case r of
           Just (rty':_,usub3,tsub3) ->
              return (Expr pn rty' (ExprNumber (NumMinus x' y')), usub3, tsub3)
-          _ -> errMsg pn $ unwords ["could not unify real number types",show x,show y]
+          _ -> errMsg pn $ unwords [ "could not unify real number types"
+                                   , displayType usub2 tsub2 (exprTy x')
+                                   , displayType usub2 tsub2 (exprTy y')
+                                   ]
 
 
 
-inferNumber _ (Expr pn _ _) _ _ = errMsg pn "Orlin.Types.inferNumber: impossible!"
+
+inferNumber _ _ (Expr pn _ _) _ _ = errMsg pn "Orlin.Types.inferNumber: impossible!"
 
 computeReducedType :: UnitTable -> AST.Type -> Comp GType
 computeReducedType utbl (AST.Type pn ty) =
@@ -198,7 +252,8 @@ computeReducedType utbl (AST.Type pn ty) =
           pure (\x y -> GType $ TyArrow x y)
              <*> computeReducedType utbl t1
              <*> computeReducedType utbl t2
-
+    TyUForall i t ->
+          fmap (GType . TyUForall i) $ computeReducedType utbl t
 
 unifyTypeList :: [GType] -> USubst -> TSubst -> Comp (Maybe ([GType], USubst, TSubst))
 unifyTypeList []  usub tsub = return  (Just ([],usub,tsub))
