@@ -27,19 +27,21 @@ data Ident = Ident Pn String
 getIdent :: Ident -> String
 getIdent (Ident _ x) = x
 
-data REPLCommandF unit
+data REPLCommandF unit typ
   = DoNothing
   | UnifyUnits [Ident] [unit]
+  | UnifyTypes [Ident] [typ]
  deriving (Eq,Show,Ord)
 
-type PreREPLCommand = REPLCommandF PreExpr
-type REPLCommand = REPLCommandF Unit
+type PreREPLCommand = REPLCommandF PreExpr PreExpr
+type REPLCommand = REPLCommandF Unit Type
 
 preREPL2REPL :: PMonad m => PreREPLCommand -> m REPLCommand
 preREPL2REPL c =
   case c of
     DoNothing -> return DoNothing
     UnifyUnits is us -> pure (UnifyUnits is) <*> mapM preexprToUnit us
+    UnifyTypes is ts -> pure (UnifyTypes is) <*> mapM preexprToType ts
 
 data PreExpr 
   = PExprDecLit Pn String
@@ -128,13 +130,13 @@ data Unit
  deriving (Eq, Show, Ord)
 
 data Type
-  = Type Pn (TypeF Type)
+  = Type Pn (TypeF Unit Type)
  deriving (Eq, Show, Ord)
 
-data TypeF a
+data TypeF unit a 
   = TyInt
   | TyNat
-  | TyReal Unit
+  | TyReal unit
   | TyIdent Ident
   | TyArrow a a
  deriving (Eq, Show, Ord)
@@ -441,7 +443,7 @@ preexprToExpr e =
           return (Expr (loc x) () $ ExprApp x' y')
     PExprBase tok -> parseFail (loc tok) $ "invalid expression syntax"
     PExprQuantify tok bs e -> preexprToExpr e >>= unwindExprBinders tok bs
-          
+
 unwindExprBinders :: PMonad m => Located Token -> [Binder] -> Expr () -> m (Expr ())
 unwindExprBinders (L pn tok) bs0 e0 =
   case tok of

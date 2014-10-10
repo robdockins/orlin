@@ -70,6 +70,7 @@ import Orlin.Lexer
 %token REAL { L _ REAL }
 %token INT { L _ INT }
 %token NAT { L _ NAT }
+%token TYPE { L _ TYPE }
 
 
 %right SM_ARROW
@@ -210,6 +211,9 @@ cmd :: { PreREPLCommand }
    | UNIT unifyList                      { UnifyUnits [] $2 }
    | UNIT LBRACE list(ident) RBRACE
         unifyList                        { UnifyUnits $3 $5 }
+   | TYPE unifyList                      { UnifyTypes [] $2 }
+   | TYPE LBRACE list(ident) RBRACE
+        unifyList                        { UnifyTypes $3 $5 }
 
 unifyList :: { [PreExpr] }
 unifyList

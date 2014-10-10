@@ -15,6 +15,7 @@ import Orlin.Lexer
 import Orlin.AST
 import Orlin.Units
 import Orlin.Compile
+import Orlin.Types
 
 import System.Console.Shell
 import System.Console.Shell.ShellMonad
@@ -69,6 +70,28 @@ shellDisplayMsg (Err (Just pn) msg)  = shellPutErrLn $ unwords [displayPn pn, ms
 
 evalCmd :: REPLCommand -> Sh REPL ()
 evalCmd DoNothing = return ()
+evalCmd (UnifyTypes is ts) =
+  do shellPutStrLn $ unwords $ ["attempting to unify"]++map show ts
+     st <- getShellSt
+     (vs,x) <- runShComp $ do
+         vs <- mapM (const compFreshVar) is
+         let utb = foldr (\(i,v) -> Map.insert (getIdent i) (VarUnitInfo (getIdent i) v))
+                         (unit_table st) 
+                         (zip is vs)
+         ts' <- mapM (computeReducedType utb) ts
+         x <- unifyTypeList ts' Map.empty Map.empty
+         return (vs,x)
+     case x of
+        Nothing -> shellPutStrLn "types do not unify"
+        Just (ts_final,usub,tsub) -> do
+           mapM_ (shellPutStrLn . show) ts_final
+           let showUnifier (i,v) = do
+                 let u = fmap (\u -> simplifyUnit u usub) $ Map.lookup v usub
+                 shellPutStrLn $ unwords [getIdent i,"("++show v++")","=",show u]
+           mapM_ showUnifier $ zip is vs
+           shellPutStrLn "subst table"
+           mapM_ (shellPutStrLn . show) $ Map.toList usub
+
 evalCmd (UnifyUnits is us) =
   do shellPutStrLn $ unwords $ ["attempting to unify"]++map show us
      st <- getShellSt
