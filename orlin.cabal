@@ -4,6 +4,8 @@ Build-Type:       Simple
 Version:          0.0.1
 Maintainer:       robdockins@fastmail.fm
 Author:           Robert Dockins
+License:          BSD2
+License-file:     LICENSE
 
 Library
   Default-language: Haskell2010
