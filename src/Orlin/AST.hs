@@ -114,7 +114,7 @@ data Expr ty
 
 data ExprF a
   = ExprNumber (NumF a)
-  | ExprToPower a a
+  | ExprToPower a Int
   | ExprNumLit NumLit Unit
   | ExprIdent Ident
   | ExprApp a a
@@ -425,7 +425,6 @@ parseExprOp (L pn tok) x y =
     PLUS   -> return $ Expr pn () $ ExprNumber $ NumPlus x y
     MINUS  -> return $ Expr pn () $ ExprNumber $ NumMinus x y
     HYPHEN -> return $ Expr pn () $ ExprNumber $ NumMinus x y
-    TOPOWER -> return $ Expr pn () $ ExprToPower x y
     _ -> parseFail pn $ unwords ["unknown expression operator", show tok]
 
 
@@ -439,6 +438,10 @@ preexprToExpr e =
          do e' <- preexprToExpr e
             exp' <- parseExp pn exp
             return (Expr (loc e) () $ ExprNumber $ NumToPower e' (fromIntegral exp'))
+    PExprBinOp e1 (L _ TOPOWER) e2 ->
+       do e1' <- preexprToExpr e1
+          n <- preexprToExp e2
+          return (Expr (loc e1) () $ ExprToPower e1' (fromIntegral n))
     PExprBinOp e1 op e2 ->
        do e1' <- preexprToExpr e1
           e2' <- preexprToExpr e2

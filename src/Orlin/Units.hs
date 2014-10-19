@@ -2,6 +2,7 @@ module Orlin.Units where
 
 import           Control.Monad
 
+import           Data.Maybe
 import           Data.List
 import           Data.Map.Strict( Map )
 import qualified Data.Map.Strict as Map
@@ -104,7 +105,7 @@ sign n
 dimUnify :: Unit -> USubst -> Comp (Maybe USubst)
 dimUnify UnitZero subst = return (Just subst)
 dimUnify (Unit u) subst =
-  case getSmallestVar u of
+  case getSmallestVar u subst of
      Nothing -> if Map.null u then return $ Just subst else return Nothing
      Just (final,v,n,u') ->
        let --idiv_neg n' = - (sign n * sign n' * (abs n' `div` abs n))
@@ -130,17 +131,25 @@ isDimensionless :: Unit -> Bool
 isDimensionless UnitZero = False
 isDimensionless (Unit u) = Map.null u
 
-getSmallestVar :: Map (Either String UVar) Int -> Maybe (Bool,UVar,Int,Map (Either String UVar) Int)
-getSmallestVar m = fmap (\(f,v,n) -> (f,v,n,Map.delete (Right v) m)) $ findSmallest m
+getSmallestVar
+    :: Map (Either String UVar) Int
+    -> USubst
+    -> Maybe (Bool,UVar,Int,Map (Either String UVar) Int)
+getSmallestVar m subst =
+  fmap (\(f,v,n) -> (f,v,n,Map.delete (Right v) m)) $ findSmallest m
 
  where findSmallest :: Map (Either String UVar) Int -> Maybe (Bool,UVar,Int)
        findSmallest = Map.foldrWithKey f Nothing
 
        f (Left k) n x = x
-       f (Right v) n Nothing = Just (True,v,n)
-       f (Right v) n (Just (_,v',n'))
-           | abs n < abs n' = Just (False,v,n)
-           | otherwise      = Just (False,v',n')
+       f (Right v) n x =
+          if isJust $ Map.lookup v subst
+             then x
+             else case x of
+                   Nothing -> Just (True,v,n)
+                   Just (_,v',n')
+                     | abs n < abs n' -> Just (False,v,n)
+                     | otherwise      -> Just (False,v',n')
 
 
 unitDimensionless :: Unit

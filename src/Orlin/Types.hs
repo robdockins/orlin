@@ -67,12 +67,24 @@ inferType
    -> Comp (Expr GType, USubst, TSubst)
 inferType utab ttab ex@(Expr pn _ x) usub tsub =
   case x of
+
     ExprNumber _    -> reduceNumber ex >>= \ex' -> inferNumber utab ttab ex' usub tsub
+
     ExprNumLit nl u ->
       do u' <- computeReducedUnit pn utab u
          let r = reduceNumLit nl
          return (Expr pn (GType (TyReal u')) $ ExprNumber $ NumDec "" r, usub, tsub)
-    ExprToPower _ _ -> errMsg pn $ unwords ["typing of raising general expressions to powers not implemented!"]
+
+    ExprToPower e n ->
+      do (e',usub1,tsub1) <- inferType utab ttab e usub tsub
+         uv <- compFreshVar 
+         let ty = GType (TyReal (unitVar uv))
+         r <- unifyTypes ty (exprTy e') usub1 tsub1
+         case r of
+           Just (GType (TyReal u'),_,usub2,tsub2) -> do
+             u'' <- unitToPower pn u' n
+             return (Expr pn (GType (TyReal u'')) $ ExprToPower e' n, usub2, tsub2)
+           _ -> errMsg pn $ "expected real number type"
 
     ExprIdent i -> 
         case Map.lookup (getIdent i) ttab of
