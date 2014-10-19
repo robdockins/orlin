@@ -6,6 +6,14 @@ Maintainer:       robdockins@fastmail.fm
 Author:           Robert Dockins
 License:          BSD2
 License-file:     LICENSE
+Category:         Languages
+Synopsis:         A language for reference
+                  implementations of scientific computations
+
+Source-Repository head
+  Type: git
+  location: git://github.com/robdockins/orlin.git
+
 
 Library
   Default-language: Haskell2010
