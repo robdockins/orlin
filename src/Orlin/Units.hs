@@ -39,7 +39,7 @@ displayOneUnit usub nm n = either id displayVar nm ++ map toSuper (show n)
             case Map.lookup v usub of
               Nothing -> "_u" ++ show v
               Just (Left nm) -> nm
-              Just (Right u) -> displayUnit usub u
+              Just (Right u) -> "(" ++ displayUnit usub u ++ ")"
 
         toSuper '1' = '¹'
         toSuper '2' = '²'

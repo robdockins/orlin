@@ -51,7 +51,7 @@ displayType usub tsub (GType x) =
     TyReal (UnitZero) -> "ℝ⟨0⟩"
     TyReal u@(Unit m)
        | Map.null m -> "ℝ"
-       | otherwise -> "ℝ⟨" ++ displayUnit usub u ++ "⟩"
+       | otherwise -> "ℝ〈" ++ displayUnit usub (simplifyUnit u usub) ++ "〉"
     TyArrow t1 t2 -> "("++displayType usub tsub t1 ++ " → " ++ displayType usub tsub t2++")"
     TyUForall i t -> "∀"++(getIdent i)++", "++displayType usub tsub t
 
