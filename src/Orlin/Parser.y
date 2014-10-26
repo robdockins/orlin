@@ -71,6 +71,7 @@ import Orlin.Lexer
 %token INT { L _ INT }
 %token NAT { L _ NAT }
 %token TYPE { L _ TYPE }
+%token OF { L _ OF }
 
 
 %right SM_ARROW
@@ -190,8 +191,8 @@ idents :: { [Ident] }
 decl :: { (Pn,PreDecl) }
 decl
    : QUANTITY ident                      { (loc $1, QuantityDecl $2) }
-   | UNIT ident ident                    { (loc $1, UnitDecl $2 [$3]) }
-   | UNIT ident ident ALIAS ident        { (loc $1, UnitDecl $2 [$3,$5]) }
+   | UNIT ident OF ident                 { (loc $1, UnitDecl [$2] $4) }
+   | UNIT ident ALIAS ident OF ident     { (loc $1, UnitDecl [$2,$4] $6) }
    | UNIT ident DEFS expr                { (loc $1, UnitDefn [$2] $4) }
    | UNIT ident ALIAS ident DEFS expr    { (loc $1, UnitDefn [$2,$4] $6) }
    | CONVERSION expr PER expr            { (loc $1, ConversionDecl $2 $4) }

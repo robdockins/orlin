@@ -83,6 +83,7 @@ data Token
   | NAT
   | PRIMITIVE
   | TYPE
+  | OF
  deriving (Eq,Show,Ord)
 
 
@@ -108,6 +109,7 @@ keyword_or_ident "nat"        = NAT
 keyword_or_ident "int"        = INT
 keyword_or_ident "primitive"  = PRIMITIVE
 keyword_or_ident "type"       = TYPE
+keyword_or_ident "of"         = OF
 
 keyword_or_ident s            = TIdent s
 

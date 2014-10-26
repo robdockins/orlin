@@ -58,7 +58,7 @@ displayType usub tsub (GType x) =
 
 type TypeTable = Map String GType
 
-inferType 
+inferType
    :: UnitTable
    -> TypeTable
    -> Expr ()

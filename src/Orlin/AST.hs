@@ -153,7 +153,7 @@ instance Loc Type where
 
 data DeclF unit num typ expr
   = QuantityDecl Ident
-  | UnitDecl Ident [Ident]
+  | UnitDecl [Ident] Ident
   | UnitDefn [Ident] unit
   | ConversionDecl num num
   | ConstantDefn [Ident] num
@@ -490,7 +490,7 @@ predeclToDecl :: PMonad m => PreDecl -> m (Decl ())
 predeclToDecl d =
   case d of
     QuantityDecl i -> return $ QuantityDecl i
-    UnitDecl i is -> return $ UnitDecl i is
+    UnitDecl is i -> return $ UnitDecl is i
     UnitDefn is u -> fmap (UnitDefn is) $ preexprToUnit u
     ConversionDecl n1 n2 -> pure ConversionDecl <*> preexprToNumber n1 <*> preexprToNumber n2
     ConstantDefn is n -> fmap (ConstantDefn is) $ preexprToNumber n
