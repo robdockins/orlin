@@ -26,7 +26,13 @@ Library
     Orlin.Parser
     Orlin.Compile
     Orlin.Units
-    Orlin.Types
+
+    Orlin.PureTypeSys
+    Orlin.SymbolTable
+    
+--    Orlin.Types
+--    Orlin.Constraint
+--    Orlin.ModuleTC
 
   Ghc-options: -W
 

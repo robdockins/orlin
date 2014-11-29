@@ -81,9 +81,12 @@ data Token
   | REAL
   | INT
   | NAT
+  | RATIONAL
   | PRIMITIVE
   | TYPE
   | OF
+  | DEFINITION
+  | WITH
  deriving (Eq,Show,Ord)
 
 
@@ -107,9 +110,12 @@ keyword_or_ident "symbolic"   = SYMBOLIC
 keyword_or_ident "real"       = REAL
 keyword_or_ident "nat"        = NAT
 keyword_or_ident "int"        = INT
+keyword_or_ident "rational"   = RATIONAL
 keyword_or_ident "primitive"  = PRIMITIVE
 keyword_or_ident "type"       = TYPE
 keyword_or_ident "of"         = OF
+keyword_or_ident "definition" = DEFINITION
+keyword_or_ident "with"       = WITH
 
 keyword_or_ident s            = TIdent s
 

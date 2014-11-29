@@ -70,9 +70,11 @@ import Orlin.Lexer
 %token REAL { L _ REAL }
 %token INT { L _ INT }
 %token NAT { L _ NAT }
+%token RATIONAL { L _ RATIONAL }
 %token TYPE { L _ TYPE }
 %token OF { L _ OF }
-
+%token DEFINITION { L _ DEFINITION }
+%token WITH { L _ WITH }
 
 %right SM_ARROW
 %left COMMA
@@ -131,8 +133,9 @@ expr_atom :: { PreExpr }
    | REAL                                { PExprBase $1 }
    | INT                                 { PExprBase $1 }
    | NAT                                 { PExprBase $1 }
+   | RATIONAL                            { PExprBase $1 }
    | UNIT                                { PExprUnitKind (loc $1) }
-
+   | TYPE                                { PExprTypeKind (loc $1) }
 
 expr_exp :: { PreExpr }
    : expr_atom                           { $1 }
@@ -175,11 +178,11 @@ expr_quantify :: { PreExpr }
 expr :: { PreExpr }
    : expr_quantify                       { $1 }
 
-binders :: { [Binder] }
+binders :: { [PreBinder] }
    :                                     { [] }
    | binder binders                      { ($1:$2) }
 
-binder :: { Binder }
+binder :: { PreBinder }
    : ident                               { Binder [$1] Nothing }
    | LPAREN idents RPAREN                { Binder $2 Nothing }
    | LPAREN idents COLON expr RPAREN     { Binder $2 (Just $4) }
@@ -205,8 +208,21 @@ decl
         ALIAS ident
         DEFS expr                        { (loc $1, SymbConstantDefn [$3,$5] $7) }
    | PRIMITIVE ident COLON expr          { (loc $1, PrimDecl $2 $4) }
-   | ident COLON expr                    { (loc $1, TypeSig $1 $3) }
-   | ident DEFS expr                     { (loc $1, Definition $1 $3) }
+   | DEFINITION defn_group               { (loc $1, DefinitionGroup $2) }
+
+defn_group :: { [PreDefn] }
+defn_group
+   : defn                                { [$1] }
+   | defn WITH defn_group                { ($1:$3) }
+
+defn :: { PreDefn }
+defn
+   : ident binders defn_type
+       DEFS expr                         { Definition $1 $2 $3 $5 }
+
+defn_type :: { Maybe PreExpr }
+   :                                     { Nothing }
+   | COLON expr                          { Just $2 }
 
 cmd :: { PreREPLCommand }
    :                                     { DoNothing } 

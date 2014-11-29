@@ -9,38 +9,38 @@ module Sample where {
   quantity Angle;
 
   -- SI base units
-  unit Length meter alias m;
-  unit Mass kilogram alias kg;
-  unit Time second alias s;
-  unit Electric_current ampere alias A;
-  unit Temperature kelvin alias K;
-  unit Luminous_intensity candela alias cd;
-  unit Amount_of_substance mole alias mol;
+  unit meter alias m of Length;
+  unit kilogram alias kg of Mass;
+  unit second alias s of Time;
+  unit ampere alias A of Electric_current;
+  unit kelvin alias K of Temperature;
+  unit candela alias cd of Luminous_intensity;
+  unit mole alias mol of Amount_of_substance;
 
   -- angles
   unit radian ≙ 1; – the unit "radian" is an alias for a dimensionless value
 
-  unit Angle degree;
-  unit Angle revolution;
-  unit Angle gradian;
+  unit degree of Angle;
+  unit revolution of Angle;
+  unit gradian of Angle;
 
-  conversion 360 〈degree〉 per 1 〈revolution〉;
+  conversion 360 〈degree〉  per 1 〈revolution〉;
   conversion 400 〈gradian〉 per 1 〈revolution〉;
-  conversion 2·π per 1 〈revolution〉;
+  conversion 2·π  per 1 〈revolution〉;
 
   -- other units
-  unit Time minute alias min;
-  unit Time hour alias hr;
+  unit minute alias min of Time;
+  unit hour alias hr of Time;
 
   conversion 60 〈s〉 per 1 〈min〉;
   conversion 60 〈min〉 per 1 〈hr〉;
 
-  unit Length centimeter alias cm;
-  unit Length milimeter alias mm;
+  unit centimeter alias cm of Length;
+  unit milimeter alias mm of Length;
 
-  unit Length foot alias ft;
-  unit Length inch alias in;
-  unit Length mile;
+  unit foot alias ft of Length;
+  unit inch alias in of Length;
+  unit mile of Length;
 
   conversion 5280 〈ft〉 per 1 〈mile〉;
   conversion 12 〈in〉 per 1〈ft〉;
@@ -56,7 +56,7 @@ module Sample where {
   unit volt alias V ≙ J/C;
   unit ohm alias Ω ≙ V/A;
   unit henry alias H ≙ Ω·s;
-  unit farad alias F ≙ A·s/V;
+  unit farad alias F ≙ C/V;
 
   primitive sin : ℝ → ℝ;
   primitive cos : ℝ → ℝ;
@@ -105,18 +105,26 @@ module Sample where {
       ≙ e²·c·μ₀ / 2·h;
 
 
-gravitational_attraction : ℝ〈kg〉 → ℝ〈kg〉 → ℝ〈m〉 → ℝ〈N〉;
-gravitational_attraction ≙ 𝛌m₁ m₂ r, (G·m₁·m₂)/r²;
+definition gravational_attraction (m₁ m₂:ℝ〈kg〉) (r:ℝ〈m〉) : ℝ〈N〉
+   ≙ (G·m₁·m₂)/r²;
 
 
+--gravitational_attraction : ℝ〈kg〉 → ℝ〈kg〉 → ℝ〈m〉 → ℝ〈N〉;
+--gravitational_attraction ≙ 𝛌m₁ m₂ r, (G·m₁·m₂)/r²;
+
+
+– geometric space complex
+–  units (1)
+–  basis (《i》)
+–  signature (-1);
 
 –  geometric space D1
 –     units ( second, meter )
-–     basis ( 《t》, 《x》 )
+–     basis (《t》,《x》)
 –     signature ( c, -1 );
 
 –  scale_d1t : ∀(α β:Unit) (k:Grade), Real〈α〉 → D1(k)〈β〉 → D1(k)〈α·β〉;
-–  scale_d1t ≙ \ x  v, x·v;
+–  scale_d1t x v ≙ x·v;
   
 –  vector_mult : ∀(α β:Unit), D1{1}〈α〉 → D1{1}〈β〉 → D1{0,2}〈α·β〉
 –  vector_mult ≙ 𝛌x y, x·y;

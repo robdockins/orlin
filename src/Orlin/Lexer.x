@@ -75,6 +75,7 @@ tokens :-
 <0>  "ℝ"                            { emit REAL }
 <0>  "ℤ"                            { emit INT }
 <0>  "ℕ"                            { emit NAT }
+<0>  "ℚ"                            { emit RATIONAL }
 <0>  "→"                            { emit SM_ARROW }
 <0>  "⇒"                            { emit BIG_ARROW }
 <0>  "<|"                           { emit LANGLE }

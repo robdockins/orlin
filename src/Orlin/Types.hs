@@ -8,15 +8,16 @@ import qualified Data.Map.Strict as Map
 import           Control.Monad.Trans.State
 import           Control.Monad.Trans.Class
 
+import           Orlin.Tokens( Pn )
 import qualified Orlin.AST as AST
-import           Orlin.AST( Loc(..), Ident(..), getIdent, Binder(..), TypeF(..), ExprF(..), Expr(..), NumF(..) )
+import           Orlin.AST( Loc(..), Ident(..), getIdent, BinderF(..), ExprF(..), Expr(..), NumF(..) )
 import           Orlin.Compile
 import           Orlin.Units
 
 type TC a = StateT TCState Comp a
 
 data GType
-  = GType (TypeF Unit GType)
+  = GType (TypeF Unit Kind GType)
   | GTypeVar Int
  deriving (Eq, Show, Ord)
  
@@ -32,6 +33,27 @@ runTC m = runStateT m initTCState
 
 type TVar = Int
 type TSubst = Map TVar GType
+
+data Kind
+  = KUnit
+  | KType
+ deriving (Eq, Show, Ord)
+
+data Type
+  = Type Pn (TypeF AST.Unit Kind Type)
+ deriving (Eq, Show, Ord)
+
+instance Loc Type where
+  loc (Type pn _) = pn
+
+data TypeF unit kind a 
+  = TyInt
+  | TyNat
+  | TyReal unit
+  | TyIdent Ident
+  | TyArrow a a
+  | TyForall Ident (Maybe kind) a
+ deriving (Eq, Show, Ord)
 
 
 displayType
@@ -53,7 +75,7 @@ displayType usub tsub (GType x) =
        | Map.null m -> "ℝ"
        | otherwise -> "ℝ〈" ++ displayUnit usub (simplifyUnit u usub) ++ "〉"
     TyArrow t1 t2 -> "("++displayType usub tsub t1 ++ " → " ++ displayType usub tsub t2++")"
-    TyUForall i t -> "∀"++(getIdent i)++", "++displayType usub tsub t
+    TyForall i k t -> "∀"++(getIdent i)++", "++displayType usub tsub t
 
 
 type TypeTable = Map String GType
@@ -105,20 +127,20 @@ inferType utab ttab ex@(Expr pn _ x) usub tsub =
              Just (_,_,usub3,tsub3) ->
                 return (Expr pn (GTypeVar resvar) $ ExprApp e1' e2', usub3, tsub3)
 
-    ExprUAbs i e -> do
-       uv <- compFreshVar
-       let utab' = Map.insert (getIdent i) (VarUnitInfo (getIdent i) uv) utab
-       let usub' = Map.insert uv (Left (getIdent i)) usub
-       (e', usub'', tsub') <- inferType utab' ttab e usub' tsub
-       return (Expr pn (GType (TyUForall i (exprTy e'))) $ ExprUAbs i e', usub'', tsub')
+    -- ExprAbs i mk e -> do -- FIXME, do kinds!
+    --    uv <- compFreshVar
+    --    let utab' = Map.insert (getIdent i) (VarUnitInfo (getIdent i) uv) utab
+    --    let usub' = Map.insert uv (Left (getIdent i)) usub
+    --    (e', usub'', tsub') <- inferType utab' ttab e usub' tsub
+    --    return (Expr pn (GType (TyForall i mk (exprTy e'))) $ ExprTAbs i mk e', usub'', tsub')
 
-    ExprAbs i mty e -> do
-       targ <- case mty of
-                  Just ty -> computeReducedType utab ty
-                  Nothing -> fmap GTypeVar $ compFreshVar
-       let ttab' = Map.insert (getIdent i) targ ttab
-       (e',usub',tsub') <- inferType utab ttab' e usub tsub
-       return (Expr pn (GType (TyArrow targ (exprTy e'))) $ ExprAbs i mty e', usub', tsub')
+    -- ExprAbs i mty e -> do
+    --    targ <- case mty of
+    --               Just ty -> computeReducedType utab ty
+    --               Nothing -> fmap GTypeVar $ compFreshVar
+    --    let ttab' = Map.insert (getIdent i) targ ttab
+    --    (e',usub',tsub') <- inferType utab ttab' e usub tsub
+    --    return (Expr pn (GType (TyArrow targ (exprTy e'))) $ ExprAbs i mty e', usub', tsub')
        
 
 exprTy :: Expr a -> a
@@ -251,8 +273,8 @@ inferNumber utab ttab (Expr pn _ (ExprNumber num)) usub tsub =
 
 inferNumber _ _ (Expr pn _ _) _ _ = errMsg pn "Orlin.Types.inferNumber: impossible!"
 
-computeReducedType :: UnitTable -> AST.Type -> Comp GType
-computeReducedType utbl (AST.Type pn ty) =
+computeReducedType :: UnitTable -> Type -> Comp GType
+computeReducedType utbl (Type pn ty) =
   case ty of
     TyInt -> return $ GType TyInt
     TyNat -> return $ GType TyNat
@@ -264,8 +286,8 @@ computeReducedType utbl (AST.Type pn ty) =
           pure (\x y -> GType $ TyArrow x y)
              <*> computeReducedType utbl t1
              <*> computeReducedType utbl t2
-    TyUForall i t ->
-          fmap (GType . TyUForall i) $ computeReducedType utbl t
+    TyForall i k t ->
+          fmap (GType . TyForall i k) $ computeReducedType utbl t
 
 unifyTypeList :: [GType] -> USubst -> TSubst -> Comp (Maybe ([GType], USubst, TSubst))
 unifyTypeList []  usub tsub = return  (Just ([],usub,tsub))

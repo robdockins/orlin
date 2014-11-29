@@ -14,6 +14,11 @@ import qualified Orlin.AST as AST
 import           Orlin.AST (Ident(..), getIdent, loc)
 import Orlin.Compile
 
+newtype UVar = UVar Int
+ deriving (Eq, Ord, Show)
+
+type USubst = Map UVar (Either String Unit)
+
 -- | A unit is either the very special Zero unit (which characterizes only the 0 constant),
 --   or is a map from constant and variable names to occurences.  A negative occurence
 --   signifies the inverse unit.  Units are multiplied by adding corresponding occurence numbers,
@@ -61,9 +66,6 @@ displayOneUnit usub nm n = either id displayVar nm ++ displayPower n
         toSuper '+' = '⁺'
         toSuper c = c
 
-type UVar = Int
-
-type USubst = Map UVar (Either String Unit)
 
 unifyUnitList :: [Unit] -> USubst -> Comp (Maybe ([Unit], USubst))
 unifyUnitList []  subst = return  (Just ([],subst))
@@ -117,8 +119,8 @@ dimUnify (Unit u) subst =
                if isDimensionless u'' then return $ Just subst' else return Nothing
             else do
                newvar <- compFreshVar
-               let uv  = mkUnit $ Map.insert (Right newvar) 1 $ fmap (\n' -> -(n' `div` n)) u'
-               let u'' = mkUnit $ Map.insert (Right newvar) n $ fmap (\n' -> n' `mod` n) u'
+               let uv  = mkUnit $ Map.insert (Right $ UVar newvar) 1 $ fmap (\n' -> -(n' `div` n)) u'
+               let u'' = mkUnit $ Map.insert (Right $ UVar newvar) n $ fmap (\n' -> n' `mod` n) u'
                let subst' = Map.insert v (Right uv) subst
                dimUnify u'' subst'
 
@@ -207,7 +209,7 @@ data UnitInfo
     }
   | DerivedUnitInfo
     { unit_canon_name :: String
-    , unit_ast        :: AST.Unit  -- ^ The syntax of the unit as defined
+    , unit_ast        :: AST.Unit Ident  -- ^ The syntax of the unit as defined
     , unit_reduced    :: Unit      -- ^ The reduced form of the unit
     }
   | VarUnitInfo
@@ -221,13 +223,13 @@ type QuantitySet = Set String
 type UnitTable = Map String UnitInfo
 
 
-buildUnitEnv :: AST.Module ty -> Comp (QuantitySet, UnitTable)
+buildUnitEnv :: AST.Module Ident -> Comp (QuantitySet, UnitTable)
 buildUnitEnv (AST.Module _ ds) =
    do qty_set <- buildQuantitySet ds
       utbl <- buildUnitTable qty_set ds
       return (qty_set, utbl)
 
-computeReducedUnit :: Pn -> UnitTable -> AST.Unit -> Comp Unit
+computeReducedUnit :: Pn -> UnitTable -> AST.Unit Ident -> Comp Unit
 computeReducedUnit pn utbl u =
   case u of
      AST.UZero    -> return $ UnitZero
@@ -251,10 +253,10 @@ computeReducedUnit pn utbl u =
             unitToPower pn u' (fromIntegral exp)
 
 
-buildQuantitySet :: [(Pn,AST.Decl ty)] -> Comp QuantitySet
+buildQuantitySet :: [(Pn,AST.Decl Ident)] -> Comp QuantitySet
 buildQuantitySet = foldM buildQuantitySetDecl Set.empty
 
-buildQuantitySetDecl :: QuantitySet -> (Pn,AST.Decl ty) -> Comp QuantitySet
+buildQuantitySetDecl :: QuantitySet -> (Pn,AST.Decl Ident) -> Comp QuantitySet
 buildQuantitySetDecl qty_set (pn,AST.QuantityDecl q) =
     do when (Set.member (getIdent q) qty_set) (errMsg pn $ unwords ["physical quantity already declared:",getIdent q])
        return (Set.insert (getIdent q) qty_set)
@@ -262,10 +264,10 @@ buildQuantitySetDecl qty_set (pn,AST.QuantityDecl q) =
 buildQuantitySetDecl qty_set _ = return qty_set
 
 
-buildUnitTable :: Set String -> [(Pn,AST.Decl ty)] -> Comp UnitTable
+buildUnitTable :: Set String -> [(Pn,AST.Decl Ident)] -> Comp UnitTable
 buildUnitTable qty_set = foldM (flip $ buildUnitTableDecl qty_set) Map.empty
 
-buildUnitTableDecl :: Set String -> (Pn,AST.Decl ty) -> UnitTable -> Comp UnitTable
+buildUnitTableDecl :: Set String -> (Pn,AST.Decl Ident) -> UnitTable -> Comp UnitTable
 buildUnitTableDecl qty_set (pn,AST.UnitDecl [] qty_name) tb = errMsg pn "internal error: empty unit declaration"
 buildUnitTableDecl qty_set (pn,AST.UnitDecl nms@(cname:_) qty_name) tb = foldM (addUnitDecl qty_name cname) tb nms
   where
@@ -289,7 +291,7 @@ buildUnitTableDecl qty_set (pn,AST.UnitDefn nms@(cname:_) u) tb =
      foldM (addUnitDefn cname red u) tb nms
 
  where
-  addUnitDefn :: Ident -> Unit -> AST.Unit -> UnitTable -> Ident -> Comp UnitTable
+  addUnitDefn :: Ident -> Unit -> AST.Unit Ident -> UnitTable -> Ident -> Comp UnitTable
   addUnitDefn cname u uast tb uname =
      case Map.lookup (getIdent uname) tb of
         Just _ -> errMsg (loc uname) $ unwords ["unit name already bound in scope:", getIdent uname]
