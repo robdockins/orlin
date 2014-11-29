@@ -104,8 +104,6 @@ unfoldExpr x =
 
 seq_lookup :: Seq a -> Index -> a
 seq_lookup seq (Idx i) = Seq.index seq (Seq.length seq - 1 - i)
-  
-
 
 displayExpr :: Seq String -> Expr -> TC String
 displayExpr nms (Var v) = return $ seq_lookup nms v
@@ -272,7 +270,8 @@ type Env = Seq Scope
 data Constraint
   = CUnify Pn Expr Expr
   | CProdRel Pn Sort Sort Sort
-  | CCheck Pn Context Expr Sort
+  | CSortRel Pn Sort Sort
+  | CCheck Pn Context Expr Expr
   | CNumericType Pn Expr
  deriving( Eq, Ord, Show )
 
@@ -288,11 +287,11 @@ type SortMap = Map EVar Sort
 type LocalScope = Map String Int
 
 
-lookup_env :: AST.Ident -> Env -> Maybe (Pn,Symbol)
+lookup_env :: String -> Env -> Maybe (Pn,Symbol)
 lookup_env ident env =
   case Seq.viewl env of
     s Seq.:< env' ->
-      case Map.lookup (AST.getIdent ident) s of
+      case Map.lookup ident s of
         Just x -> Just x
         Nothing -> lookup_env ident env'
     Seq.EmptyL -> Nothing
@@ -311,11 +310,11 @@ setEVarExpr ev ex =
       put (sm, Map.insert ev ex vm)
 
 -- NOTE expr is assumed to be in WHNF
-unifyEVar :: Pn -> Seq Thunk -> EVar -> (Maybe Blocker, Expr) -> TC CSet
-unifyEVar pn thunks ev (blk,x) =
+unifyEVar :: Pn -> Env -> Seq Thunk -> EVar -> (Maybe Blocker, Expr) -> TC CSet
+unifyEVar pn env thunks ev (blk,x) =
   do (sm,vm) <- get
      case Map.lookup ev vm of
-        Just t  -> (applyThunks thunks t >>= whnf pn) >>= unify pn (blk,x)
+        Just t  -> (applyThunks thunks t >>= whnf pn) >>= unify pn env (blk,x)
         Nothing ->
           if Seq.length thunks == 0
              then setEVarExpr ev x >> return Set.empty
@@ -334,25 +333,26 @@ unifyEVar pn thunks ev (blk,x) =
      do ty' <- freshExpr thunks
         body' <- freshExpr thunks
         setEVarExpr ev (Lambda nm ty' s body')
-        c1 <- simplifyConstraint (CUnify pn ty ty')
-        c2 <- simplifyConstraint (CUnify pn body body')
-        return (Set.union c1 c2)
+        c1 <- simplifyConstraint env (CUnify pn ty ty')
+        c2 <- simplifyConstraint env (CUnify pn body body')
+        return (Set.unions [c1,c2])
 
   go (Pi nm ty s body) = 
      do ty' <- freshExpr thunks
         body' <- freshExpr thunks
         setEVarExpr ev (Pi nm ty' s body')
-        c1 <- simplifyConstraint (CUnify pn ty ty')
-        c2 <- simplifyConstraint (CUnify pn body body')
+        c1 <- simplifyConstraint env (CUnify pn ty ty')
+        c2 <- simplifyConstraint env (CUnify pn body body')
         return (Set.union c1 c2)
    
-  go (App x y) =  -- FIXME??
+  go (App x y) =  -- FIXME?? higher-order-unification?
      do x' <- freshExpr thunks
         y' <- freshExpr thunks
         setEVarExpr ev (App x' y')
-        c1 <- simplifyConstraint (CUnify pn x x')
-        c2 <- simplifyConstraint (CUnify pn y y')
-        return (Set.union c1 c2)
+
+        c1 <- simplifyConstraint env (CUnify pn x x')
+        c2 <- simplifyConstraint env (CUnify pn y y')
+        return (Set.unions [c1,c2])
         
   go (Let _ _) = lift $ errMsg pn $ unwords ["internal error: unify expr expected to be in WHNF"]
 
@@ -400,16 +400,121 @@ whnf pn (Let (RecDecl _) _) = lift $ errMsg pn $ unwords ["don't try to evaluate
 
 whnf pn x = return (Nothing, x)
 
-simplifyConstraint :: Constraint -> TC CSet
-simplifyConstraint (CUnify pn (EEVar thunks ev) y) = whnf pn y >>= unifyEVar pn thunks ev
-simplifyConstraint (CUnify pn x (EEVar thunks ev)) = whnf pn x >>= unifyEVar pn thunks ev
-simplifyConstraint (CUnify pn x y) =
+simplifyConstraint :: Env -> Constraint -> TC CSet
+simplifyConstraint env (CUnify pn (EEVar thunks ev) y) = whnf pn y >>= unifyEVar pn env thunks ev
+simplifyConstraint env (CUnify pn x (EEVar thunks ev)) = whnf pn x >>= unifyEVar pn env thunks ev
+simplifyConstraint env (CUnify pn x y) =
   do x' <- whnf pn x
      y' <- whnf pn y
-     unify pn x' y'
+     unify pn env x' y'
 
-simplifyConstraint c = return $ Set.singleton c
+simplifyConstraint env (CCheck pn ctx exp ty) = checkExpr pn env ctx exp ty
+simplifyConstraint env (CProdRel pn s1 s2 s3) = checkProdRel pn s1 s2 s3
+simplifyConstraint env (CSortRel pn s1 s2) = checkSortRel pn env s1 s2
+
+simplifyConstraint _ c = return $ Set.singleton c
      
+unifyUnits :: Pn -> Expr -> Expr -> TC CSet
+unifyUnits pn x y = undefined
+
+checkProdRel :: Pn -> Sort -> Sort -> Sort -> TC CSet
+checkProdRel pn s1 s2 s3 =
+    do unifySort pn s2 s3
+       join (pure check <*> getSort s1 <*> getSort s2)
+ where
+   check s1@(SEVar _) s2@(SEVar _) = return $ Set.singleton (CProdRel pn s1 s2 s2)
+   check SType s2    = unifySort pn s2 SType
+   check SUnit s2    = unifySort pn s2 SType
+   check SKind SType = return $ Set.empty
+   check SKind SUnit = lift $ errMsg pn $ "units may not depend on types"
+   check s1 SKind    = unifySort pn s1 SKind
+   check s1 SUnit    = unifySort pn s1 SUnit
+   check s1 s2       = return $ Set.singleton (CProdRel pn s1 s2 s2)
+
+checkSortRel :: Pn -> Env -> Sort -> Sort -> TC CSet
+checkSortRel pn env s1 s2 = join (pure check <*> getSort s1 <*> getSort s2)
+ where
+   check s1@(SEVar _) s2@(SEVar _) = return $ Set.singleton (CSortRel pn s1 s2)
+   check SType s2 = unifySort pn s2 SKind
+   check SUnit s2 = unifySort pn s2 SKind
+   check SKind _  = lift $ errMsg pn $ "'kind' cannot be typed"
+   check _ SType  = lift $ errMsg pn $ "'type' classifes no sorts"
+   check _ SUnit  = lift $ errMsg pn $ "'unit' classifes no sorts"
+   check s1 SKind = return $ Set.singleton (CSortRel pn s1 SKind)
+
+
+getSort :: Sort -> TC Sort
+getSort s@(SEVar ev) =
+   do (sm,_) <- get
+      case Map.lookup ev sm of
+        Just s' -> getSort s'
+        Nothing -> return s
+getSort s = return s
+  
+
+
+checkExpr :: Pn -> Env -> Context -> Expr -> Expr -> TC CSet
+checkExpr pn env ctx ex ty =
+ do ex' <- whnf pn ex
+    case snd ex' of
+       EEVar thunks ev ->
+         do (_,vm) <- get
+            case Map.lookup ev vm of
+              Just t  -> applyThunks thunks t >>= \t' -> checkExpr pn env ctx t' ty
+              Nothing -> return $ Set.singleton (CCheck pn ctx (snd ex') ty)
+
+       Sort s' ->
+            do s <- freshSort
+               c1 <- simplifyConstraint env (CSortRel pn s' s)
+               c2 <- simplifyConstraint env (CUnify pn ty (Sort s))
+               return (Set.unions [c1,c2])
+
+       Base bt -> simplifyConstraint env (CUnify pn ty (Sort SType))
+
+       Var idx -> 
+          let (ty',s') = seq_lookup ctx idx
+           in simplifyConstraint env (CUnify pn ty ty')
+
+       App x y ->
+         do a <- freshExpr Seq.empty
+            s <- freshSort
+            s' <- freshSort
+            b <- freshExpr Seq.empty
+            let typx = (Pi "_" a s b)
+            c1 <- checkExpr pn env ctx x typx
+            c2 <- checkExpr pn env ctx y a
+            b' <- subst (Seq.singleton y) b
+            c3 <- simplifyConstraint env (CUnify pn ty b')
+            return (Set.unions [c1,c2,c3])
+
+       Pi nm a s1 b ->
+         do s2 <- freshSort
+            s3 <- freshSort
+            c1 <- checkExpr pn env ctx a (Sort s1)
+            c2 <- checkExpr pn env (ctx Seq.|> (a,s1)) b (Sort s2)
+            c3 <- simplifyConstraint env (CProdRel pn s1 s2 s3)
+            c4 <- simplifyConstraint env (CUnify pn ty (Sort s3))
+            return (Set.unions [c1,c2,c3,c4])
+
+       Lambda nm a s body ->
+         do s' <- freshSort
+            b <- freshExpr Seq.empty
+            c1 <- checkExpr pn env ctx (Pi nm a s b) (Sort s')
+            c2 <- checkExpr pn env (ctx Seq.|> (a,s)) body b
+            c3 <- simplifyConstraint env (CUnify pn ty (Pi nm a s b))
+            return (Set.unions [c1,c2,c3])
+
+       ExprIdent (QId ident) ->
+         case lookup_env ident env of
+           Just (_,SymExpr _ ty' s') -> simplifyConstraint env (CUnify pn ty ty')
+           Nothing -> lift $ errMsg pn $ unwords [ident,"not in scope"]
+
+       ExprNumLit num u ->
+         simplifyConstraint env (CUnify pn ty (Base (AST.BaseReal u)))
+
+      {- ExprNum ... FIXME -}
+      {- Let .... FIXME -}
+
 
 unifySort :: Pn -> Sort -> Sort -> TC CSet
 unifySort pn (SEVar sv) s =
@@ -424,47 +529,48 @@ unifySort pn s1 s2
 
 
 -- NOTE, inputs assumed to be in WHNF and not EVars
-unify :: Pn -> (Maybe Blocker, Expr) -> (Maybe Blocker, Expr) -> TC CSet
-unify pn (_,Var idx1) (_,Var idx2)
+unify :: Pn -> Env -> (Maybe Blocker, Expr) -> (Maybe Blocker, Expr) -> TC CSet
+unify pn _ (_,Var idx1) (_,Var idx2)
   | idx1 == idx2 = return Set.empty
   | otherwise = lift $ errMsg pn $ unwords ["cannot unify variable", show idx1, "with", show idx2]
-unify pn (_,Pi nm1 typ1 sort1 body1) (_,Pi nm2 typ2 sort2 body2) =
-  do c1 <- simplifyConstraint (CUnify pn typ1 typ2)
-     c2 <- simplifyConstraint (CUnify pn (Sort sort1) (Sort sort2))
-     c3 <- simplifyConstraint (CUnify pn body1 body2)
+
+unify pn env (_,Pi nm1 typ1 sort1 body1) (_,Pi nm2 typ2 sort2 body2) =
+  do c1 <- simplifyConstraint env (CUnify pn typ1 typ2)
+     c2 <- unifySort pn sort1 sort2
+     c3 <- simplifyConstraint env (CUnify pn body1 body2)
      return $ Set.unions [c1,c2,c3]
 
-unify pn (Just (BlockVar idx1), App x1 y1) (Just (BlockVar idx2), App x2 y2)
+unify pn env (Just (BlockVar idx1), App x1 y1) (Just (BlockVar idx2), App x2 y2)
   | idx1 == idx2 =
-       do c1 <- unify pn (Just (BlockVar idx1), x1) (Just (BlockVar idx2), x2)
-          c2 <- simplifyConstraint (CUnify pn y1 y2)
-          return (Set.union c1 c2)
+       do c1 <- unify pn env (Just (BlockVar idx1), x1) (Just (BlockVar idx2), x2)
+          c2 <- simplifyConstraint env (CUnify pn y1 y2)
+          return (Set.unions [c1,c2])
   | otherwise = lift $ errMsg pn $ unwords ["cannot unify variable",show idx1, "with", show idx2]
 
-unify pn (Just (BlockIdent ident1), App x1 y1) (Just (BlockIdent ident2), App x2 y2)
+unify pn env (Just (BlockIdent ident1), App x1 y1) (Just (BlockIdent ident2), App x2 y2)
   | ident1 == ident2 =
-       do c1 <- unify pn (Just (BlockIdent ident1), x1) (Just (BlockIdent ident2), x2)
-          c2 <- simplifyConstraint (CUnify pn y1 y2)
+       do c1 <- unify pn env (Just (BlockIdent ident1), x1) (Just (BlockIdent ident2), x2)
+          c2 <- simplifyConstraint env (CUnify pn y1 y2)
           return (Set.union c1 c2)
   | otherwise = lift $ errMsg pn $ unwords ["cannot unify",show ident1, "with", show ident2]
 
-unify pn (Just (BlockEVar _), x) (_,y) =
+unify pn _ (Just (BlockEVar _), x) (_,y) =
   return $ Set.singleton (CUnify pn x y)
 
-unify pn (_,x) (Just (BlockEVar _), y) =
+unify pn _ (_,x) (Just (BlockEVar _), y) =
   return $ Set.singleton (CUnify pn x y)
 
-unify pn (_,ExprIdent (QId ident1)) (_,ExprIdent (QId ident2))
+unify pn _ (_,ExprIdent (QId ident1)) (_,ExprIdent (QId ident2))
   | ident1 == ident2 = return Set.empty
   | otherwise = lift $ errMsg pn $ unwords ["cannot unify",ident1,"with",ident2]
-unify pn (_,Sort s1) (_,Sort s2) = unifySort pn s1 s2
-unify pn (_,Base b1) (_,Base b2)
-  | b1 == b2 = return Set.empty
+
+unify pn _ (_,Sort s1) (_,Sort s2) = unifySort pn s1 s2
+
+unify pn _ (_,Base b1) (_,Base b2)
+  | b1 == b2 = return Set.empty -- FIXME unify units
   | otherwise = lift $ errMsg pn $ unwords ["cannot unify",show b1,"with", show b2]
 
-unify pn (_,x) (_,y) = lift $ errMsg pn $ unwords ["cannot unify", show x, "with", show y]
-
-   
+unify pn _ (_,x) (_,y) = lift $ errMsg pn $ unwords ["cannot unify", show x, "with", show y]
 
 
 
@@ -499,12 +605,27 @@ checkOneExpr expr =
       return (sm,vm,cs,expr',typ)
  where dotc =
         do typ <- freshExpr Seq.empty
-           (cs, expr') <- generateConstraints Seq.empty Seq.empty Map.empty 0 expr typ
+           let env = Seq.empty
+           (cs, expr') <- generateConstraints env Seq.empty Map.empty 0 expr typ
+           cs' <- simplifyConstraints env cs
+
            str_expr <- displayExpr Seq.empty expr' 
-           -- str_expr <- show <$> unfoldExpr expr'
            str_typ <- displayExpr Seq.empty typ
+
+           -- str_expr <- show <$> unfoldExpr expr'
            -- str_typ  <- show <$> unfoldExpr typ
-           return (cs, str_expr, str_typ)
+
+           return (cs', str_expr, str_typ)
+
+-- FIXME, this algorithm is really naive!
+simplifyConstraints :: Env -> CSet -> TC CSet
+simplifyConstraints env = loop
+ where
+    loop cs =
+       do cs' <- simpl cs
+          if cs == cs' then return cs else loop cs'
+    simpl cs = Set.unions <$> (mapM (simplifyConstraint env) $ Set.toList cs)
+
 
 generateConstraints
    :: Env             -- identifier environment
@@ -523,18 +644,18 @@ generateConstraints env ctx locals depth (AST.Expr pn ex) typ =
              ((typ',sort') Seq.:< _) ->
                do typ'' <- shift (i+1) typ' -- shift the type into the current context
 
-                  c1 <- simplifyConstraint (CUnify pn typ typ'')
+                  c1 <- simplifyConstraint env (CUnify pn typ typ'')
 
                   -- FIXME, this check may not be necessary if we maintain the invariant
                   -- that we do this check every time we extend the context...
-                  c2 <- simplifyConstraint (CCheck pn (Seq.take i ctx) typ'' sort')
+                  c2 <- simplifyConstraint env (CCheck pn ctx typ'' (Sort sort'))
                   return (Set.unions [c1,c2], Var $ Idx i)
 
              Seq.EmptyL -> lift $ errMsg pn $ unwords ["internal error: out of bounds local variable", AST.getIdent ident, show ctx, show locals, show depth, show i]
 
      -- symbol types are supposed to be closed, no shifting needed
-     | Just (_,SymExpr _ typ' _) <- lookup_env ident env ->
-               do c1 <- simplifyConstraint (CUnify pn typ typ')
+     | Just (_,SymExpr _ typ' sort') <- lookup_env (AST.getIdent ident) env ->
+               do c1 <- simplifyConstraint env (CUnify pn typ typ')
                   return (c1, ExprIdent $ QId $ AST.getIdent ident)
 
      | otherwise -> lift $ errMsg pn $ unwords ["identifier not in scope or not an expression:", AST.getIdent ident]
@@ -544,7 +665,7 @@ generateConstraints env ctx locals depth (AST.Expr pn ex) typ =
         s2 <- freshSort
         s3 <- freshSort
         (c0,a') <- case mt of
-                    Nothing -> freshExpr Seq.empty >>= \a -> return (Set.singleton (CCheck pn ctx a s1), a)
+                    Nothing -> freshExpr Seq.empty >>= \a -> return (Set.singleton (CCheck pn ctx a (Sort s1)), a)
                     Just a -> generateConstraints env ctx locals depth a (Sort s1)
         (c1,b') <- generateConstraints
                       env 
@@ -552,8 +673,8 @@ generateConstraints env ctx locals depth (AST.Expr pn ex) typ =
                       (Map.insert (AST.getIdent ident) depth locals)
                       (depth+1)
                       b (Sort s2)
-        c2 <- simplifyConstraint (CUnify pn typ (Sort s3))
-        c3 <- simplifyConstraint (CProdRel pn s1 s2 s3)
+        c2 <- simplifyConstraint env (CUnify pn typ (Sort s3))
+        c3 <- simplifyConstraint env (CProdRel pn s1 s2 s3)
         return (Set.unions [c0,c1,c2,c3],  Pi (AST.getIdent ident) a' s1 b')
 
    AST.ExprArrow a b -> 
@@ -562,8 +683,8 @@ generateConstraints env ctx locals depth (AST.Expr pn ex) typ =
         s3 <- freshSort
         (c0,a') <- generateConstraints env ctx locals depth a (Sort s1)
         (c1,b') <- generateConstraints env ctx locals depth b (Sort s2)
-        c2 <- simplifyConstraint (CUnify pn typ (Sort s3))
-        c3 <- simplifyConstraint (CProdRel pn s1 s2 s3)
+        c2 <- simplifyConstraint env (CUnify pn typ (Sort s3))
+        c3 <- simplifyConstraint env (CProdRel pn s1 s2 s3)
         b'' <- shift 1 b'
         return (Set.unions [c0,c1,c2,c3], Pi "_" a' s1 b'')
      
@@ -571,7 +692,7 @@ generateConstraints env ctx locals depth (AST.Expr pn ex) typ =
      do s <- freshSort
         s' <- freshSort
         (c0,a) <- case mt of
-                    Nothing -> freshExpr Seq.empty >>= \a -> return (Set.singleton (CCheck pn ctx a s), a)
+                    Nothing -> freshExpr Seq.empty >>= \a -> return (Set.singleton (CCheck pn ctx a (Sort s)), a)
                     Just t -> generateConstraints env ctx locals depth t (Sort s)
         b <- freshExpr Seq.empty
         let typ' = Pi (AST.getIdent ident) a s b
@@ -581,24 +702,25 @@ generateConstraints env ctx locals depth (AST.Expr pn ex) typ =
                       (Map.insert (AST.getIdent ident) depth locals)
                       (depth+1)
                       x b
-        c2 <- simplifyConstraint (CCheck pn ctx typ' s')
-        c3 <- simplifyConstraint (CUnify pn typ typ')
+        c2 <- simplifyConstraint env (CCheck pn ctx typ' (Sort s'))
+        c3 <- simplifyConstraint env (CUnify pn typ typ')
         return (Set.unions [c0, c1, c2, c3], Lambda (AST.getIdent ident) a s x')
 
    AST.ExprApp x y ->
      do a <- freshExpr Seq.empty
         s <- freshSort
+        s' <- freshSort
         b <- freshExpr Seq.empty
         let typx = (Pi "_" a s b)
         (c1,x') <- generateConstraints env ctx locals depth x typx
         (c2,y') <- generateConstraints env ctx locals depth y a
         b' <- subst (Seq.singleton y') b
-        c3 <- simplifyConstraint (CUnify pn typ b')
+        c3 <- simplifyConstraint env (CUnify pn typ b')
         return (Set.unions [c1,c2,c3], App x' y')
 
    AST.ExprNumLit nm u ->
      do u' <- Orlin.PureTypeSys.computeReducedUnit pn env ctx locals depth u
-        c1 <- simplifyConstraint (CUnify pn typ (Base (AST.BaseReal u')))
+        c1 <- simplifyConstraint env (CUnify pn typ (Base (AST.BaseReal u')))
         return (c1, ExprNumLit nm u')
 
    AST.ExprNumber num ->
@@ -606,13 +728,13 @@ generateConstraints env ctx locals depth (AST.Expr pn ex) typ =
         return (c0, ExprNum num')
 
    AST.ExprSort s ->
-     do c0 <- simplifyConstraint (CUnify pn typ (Sort SKind))
+     do c0 <- simplifyConstraint env (CUnify pn typ (Sort SKind))
         let s' = translateSort s
         return (c0, Sort s')
 
    AST.ExprBase base ->
      do base' <- traverse (Orlin.PureTypeSys.computeReducedUnit pn env ctx locals depth) base
-        c0 <- simplifyConstraint (CUnify pn typ (Sort SType))
+        c0 <- simplifyConstraint env (CUnify pn typ (Sort SType))
         return (c0, Base base')
 
 translateSort :: AST.Sort -> Sort
@@ -625,27 +747,3 @@ pairMap f g (x,y) = (f x, g y)
 computeReducedUnit :: Pn -> Env -> Context -> LocalScope -> Int -> AST.Unit AST.Ident -> TC Unit
 computeReducedUnit pn env ctx locals depth u = undefined pn env ctx locals depth u
 
-{-
-
-data Sort
-  = SType
-  | SKind
-  | SSort
-  | SEVar EVar
- deriving ( Eq, Ord, Show )
-
-data Expr
-  = Var Index
-  | EEVar EVar
-  | Lambda String Expr Sort Expr
-  | Pi String Expr Sort Expr
-  | Weaken Expr Sort Expr
-  | App Expr Expr
-  | Let Decl Expr
-  | ExprIdent QIdent
-  | ExprNumLit AST.NumLit Unit
-  | ExprNum (AST.NumF Expr)
-  | Base (AST.BaseType QIdent)
-  | Sort Sort
- deriving( Eq, Ord, Show )
--}
