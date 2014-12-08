@@ -511,9 +511,18 @@ checkExpr pn env ctx ex ty =
        EEVar thunks ev ->
          do st <- get
             let vm = exprMap st
-            case Map.lookup ev vm of
-              Just t  -> applyThunks thunks t >>= \t' -> checkExpr pn env ctx t' ty
-              Nothing -> return $ Set.singleton (CCheck pn ctx (snd ex') ty)
+            let tym = typeMap st
+            case (Map.lookup ev vm, Map.lookup ev tym) of
+              (Just t, Just tyt) ->
+                do t' <- applyThunks thunks t
+                   tyt' <- applyThunks thunks tyt
+                   -- lift $ errMsg pn $ unwords ["check expr unify:",show ty, show tyt']
+                   c1 <- simplifyConstraint env (CUnify pn ty tyt')
+                   c2 <- checkExpr pn env ctx t' ty
+                   return $ Set.unions [c1,c2]
+              (Just _, Nothing) -> fail "internal error: evar lacks type binding in checkExpr"
+
+              (Nothing, _) -> return $ Set.singleton (CCheck pn ctx (snd ex') ty)
 
        Sort s' ->
             do s <- freshSort
@@ -572,6 +581,8 @@ checkExpr pn env ctx ex ty =
 
 
 unifySort :: Pn -> Sort -> Sort -> TC CSet
+unifySort pn (SEVar sv) (SEVar sv')
+  | sv == sv' = return Set.empty
 unifySort pn (SEVar sv) s =
   do st <- get
      let sm = sortMap st
