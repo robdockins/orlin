@@ -95,7 +95,7 @@ evalCmd :: REPLCommand -> Sh REPL ()
 evalCmd DoNothing = return ()
 
 evalCmd (Typecheck e) =
-     do (sm,vm,cs,expr,typ) <- runShComp $ PTS.checkOneExpr e
+     do (sm,vm,tym,cs,expr,typ) <- runShComp $ PTS.checkOneExpr e
         shellPutStrLn expr
         shellPutStrLn typ
         mapM_ ( shellPutStrLn . show) $ Set.toList cs
